@@ -5,8 +5,8 @@ mod rendering;
 mod simulation;
 
 use bevy::prelude::*;
-use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
+use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 
 use editor::EditorPlugin;
 use rendering::RenderingPlugin;
