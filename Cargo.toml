@@ -4,4 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Trimming default-features down to just "2d"+"ui" hits a real Bevy 0.19
+# feature-migration bug (bevyengine/bevy#21093): the render sub-app never
+# gets created ("RenderApp was not detected"), leaving a blank screen on
+# web. Sticking with full default-features for now; revisit bundle-size
+# trimming separately once that's sorted out upstream or better understood.
 bevy = "0.19.0"
+
+# Separate from `[profile.release]` on purpose: a native release build (e.g.
+# a future Steam build) wants opt-level=3 for performance, but the wasm build
+# wants to optimize for download size instead. Trunk is configured (see
+# Trunk.toml) to build with this profile specifically.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

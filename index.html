@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LogicForge</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+    </style>
+    <!-- wasm-opt's default validator rejects the bulk-memory ops rustc/wasm-bindgen
+         emit on current toolchains (trunk-rs/trunk#866); disable it and rely on the
+         opt-level="z" + lto + strip release profile in Cargo.toml instead. -->
+    <link data-trunk rel="rust" data-wasm-opt="0" />
+  </head>
+  <body></body>
+</html>

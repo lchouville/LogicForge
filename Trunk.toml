@@ -1,0 +1,4 @@
+[build]
+public_url = "/LogicForge/"
+release = true
+cargo_profile = "wasm-release"
