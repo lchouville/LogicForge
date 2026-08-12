@@ -8,7 +8,31 @@ Aimed at curious minds and electronics students, the game favors free experiment
 
 ## Installation
 
+### Prerequisites
+
+- **Rust** (stable toolchain) — install via [rustup](https://rustup.rs)
+- A working C/C++ linker, required to build Bevy's native dependencies:
+  - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) with the **"Desktop development with C++"** workload
+  - **Linux** (Debian/Ubuntu example):
+
+    ```sh
+    sudo apt-get install -y g++ pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev
+    ```
+
+  - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+
+### Setup
+
+```sh
+git clone https://github.com/lchouville/LogicForge.git
+cd LogicForge
+```
+
 ## Launch
+
+```sh
+cargo run
+```
 
 ## Controls
 
