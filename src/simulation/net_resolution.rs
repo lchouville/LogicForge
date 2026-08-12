@@ -196,7 +196,11 @@ mod tests {
             pin_node(1, IVec2::new(0, 0), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[], |e| {
-            if e == Entity::from_raw_u32(0).unwrap() { 1.0 } else { 0.0 }
+            if e == Entity::from_raw_u32(0).unwrap() {
+                1.0
+            } else {
+                0.0
+            }
         });
         assert_eq!(value_of(Entity::from_raw_u32(1).unwrap(), &writes), 1.0);
     }
@@ -229,7 +233,11 @@ mod tests {
             pin_node(2, IVec2::new(10, 10), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[(1, 2)], |e| {
-            if e == Entity::from_raw_u32(0).unwrap() { 1.0 } else { 0.0 }
+            if e == Entity::from_raw_u32(0).unwrap() {
+                1.0
+            } else {
+                0.0
+            }
         });
         assert_eq!(value_of(Entity::from_raw_u32(2).unwrap(), &writes), 1.0);
     }
