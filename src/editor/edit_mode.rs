@@ -124,9 +124,7 @@ pub fn handle_edit_drag(
             if !dragged && start_cursor.distance(world_pos) > EDIT_DRAG_THRESHOLD {
                 dragged = true;
             }
-            if dragged
-                && let Ok((mut position, mut transform)) = positioned.get_mut(entity)
-            {
+            if dragged && let Ok((mut position, mut transform)) = positioned.get_mut(entity) {
                 let target_cell = world_to_cell(world_pos);
                 position.0 = target_cell;
                 transform.translation = cell_to_world(target_cell).extend(transform.translation.z);
@@ -147,9 +145,7 @@ pub fn handle_edit_drag(
             if !dragged && start_cursor.distance(world_pos) > EDIT_DRAG_THRESHOLD {
                 dragged = true;
             }
-            if dragged
-                && let Ok(mut cable) = cables.get_mut(entity)
-            {
+            if dragged && let Ok(mut cable) = cables.get_mut(entity) {
                 let delta = world_to_cell(world_pos) - world_to_cell(start_cursor);
                 cable.start = orig_start + delta;
                 cable.end = orig_end + delta;
@@ -171,9 +167,7 @@ pub fn handle_edit_drag(
             if !dragged && start_cursor.distance(world_pos) > EDIT_DRAG_THRESHOLD {
                 dragged = true;
             }
-            if dragged
-                && let Ok(mut cable) = cables.get_mut(entity)
-            {
+            if dragged && let Ok(mut cable) = cables.get_mut(entity) {
                 let target_cell = world_to_cell(world_pos);
                 match which {
                     CableEnd::Start => cable.start = target_cell,
@@ -200,9 +194,15 @@ pub fn handle_edit_click_end(
         return;
     }
     let pressed = match *drag {
-        EditDragState::Pressed { entity, dragged, .. }
-        | EditDragState::CableBody { entity, dragged, .. }
-        | EditDragState::CableEndpoint { entity, dragged, .. } => Some((entity, dragged)),
+        EditDragState::Pressed {
+            entity, dragged, ..
+        }
+        | EditDragState::CableBody {
+            entity, dragged, ..
+        }
+        | EditDragState::CableEndpoint {
+            entity, dragged, ..
+        } => Some((entity, dragged)),
         EditDragState::Idle => None,
     };
     *drag = EditDragState::Idle;

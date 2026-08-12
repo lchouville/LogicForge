@@ -7,7 +7,9 @@ use crate::simulation::components::{GridPosition, SignalValue, Switch};
 use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
 use super::placement::{pick_entity_at_cell, place_tool};
-use super::resources::{ArmedTool, InteractionState, Mode, PickCycleState, SpawnOrderCounter, ToolKind};
+use super::resources::{
+    ArmedTool, InteractionState, Mode, PickCycleState, SpawnOrderCounter, ToolKind,
+};
 use super::spawn::spawn_cable;
 
 #[allow(clippy::too_many_arguments)]

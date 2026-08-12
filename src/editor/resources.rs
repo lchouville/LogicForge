@@ -24,9 +24,7 @@ pub enum InteractionState {
     Idle,
     /// A cable is being traced: the press-cell is fixed as the start, the
     /// end follows the cursor until release.
-    PlacingCable {
-        start_cell: IVec2,
-    },
+    PlacingCable { start_cell: IVec2 },
 }
 
 /// Which of the two mutually exclusive click modes is active (toggled by a

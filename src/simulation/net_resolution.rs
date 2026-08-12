@@ -195,7 +195,9 @@ mod tests {
             pin_node(0, IVec2::new(0, 0), PinRole::Output),
             pin_node(1, IVec2::new(0, 0), PinRole::Input),
         ];
-        let writes = resolve_nets(&nodes, &[], |e| if e == Entity::from_raw(0) { 1.0 } else { 0.0 });
+        let writes = resolve_nets(&nodes, &[], |e| {
+            if e == Entity::from_raw(0) { 1.0 } else { 0.0 }
+        });
         assert_eq!(value_of(Entity::from_raw(1), &writes), 1.0);
     }
 
@@ -226,7 +228,9 @@ mod tests {
             cable_end_node(1, IVec2::new(10, 10)),
             pin_node(2, IVec2::new(10, 10), PinRole::Input),
         ];
-        let writes = resolve_nets(&nodes, &[(1, 2)], |e| if e == Entity::from_raw(0) { 1.0 } else { 0.0 });
+        let writes = resolve_nets(&nodes, &[(1, 2)], |e| {
+            if e == Entity::from_raw(0) { 1.0 } else { 0.0 }
+        });
         assert_eq!(value_of(Entity::from_raw(2), &writes), 1.0);
     }
 

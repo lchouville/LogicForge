@@ -44,9 +44,7 @@ pub fn find_cable_at(
 
             let start_distance = world_pos.distance(start);
             let end_distance = world_pos.distance(end);
-            if start_distance <= CABLE_ENDPOINT_HIT_RADIUS
-                && start_distance <= end_distance
-            {
+            if start_distance <= CABLE_ENDPOINT_HIT_RADIUS && start_distance <= end_distance {
                 return Some((entity, CableHit::Endpoint(CableEnd::Start), start_distance));
             }
             if end_distance <= CABLE_ENDPOINT_HIT_RADIUS {
@@ -54,8 +52,11 @@ pub fn find_cable_at(
             }
 
             let body_distance = distance_to_segment(world_pos, start, end);
-            (body_distance <= CABLE_BODY_HIT_DISTANCE)
-                .then_some((entity, CableHit::Body, body_distance))
+            (body_distance <= CABLE_BODY_HIT_DISTANCE).then_some((
+                entity,
+                CableHit::Body,
+                body_distance,
+            ))
         })
         .min_by(|(_, _, a), (_, _, b)| a.total_cmp(b))
         .map(|(entity, hit, _)| (entity, hit))
