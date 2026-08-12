@@ -1,19 +1,7 @@
 use bevy::prelude::*;
 
-use super::components::{GateKind, Pin, PinRole, SignalValue, SignalWriteBuffer, Wire};
+use super::components::{GateKind, Pin, PinRole, SignalValue, SignalWriteBuffer};
 use super::logic::{eval_and, eval_not, eval_or};
-
-pub fn stage_wire_propagation(
-    wires: Query<&Wire>,
-    signals: Query<&SignalValue>,
-    mut buffer: ResMut<SignalWriteBuffer>,
-) {
-    for wire in &wires {
-        if let Ok(value) = signals.get(wire.from) {
-            buffer.0.push((wire.to, value.0));
-        }
-    }
-}
 
 pub fn apply_signal_writes(
     mut buffer: ResMut<SignalWriteBuffer>,

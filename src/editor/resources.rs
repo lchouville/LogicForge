@@ -2,11 +2,14 @@ use bevy::prelude::*;
 
 use crate::simulation::components::GateKind;
 
+use super::wiring::CableEnd;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolKind {
     Gate(GateKind),
     Switch,
     Lamp,
+    Cable,
 }
 
 /// The component the player has armed via a number key. `None` means
@@ -19,8 +22,10 @@ pub struct ArmedTool(pub Option<ToolKind>);
 pub enum InteractionState {
     #[default]
     Idle,
-    Dragging {
-        from_pin: Entity,
+    /// A cable is being traced: the press-cell is fixed as the start, the
+    /// end follows the cursor until release.
+    PlacingCable {
+        start_cell: IVec2,
     },
 }
 
@@ -43,4 +48,33 @@ pub enum EditDragState {
         start_cursor: Vec2,
         dragged: bool,
     },
+    CableBody {
+        entity: Entity,
+        start_cursor: Vec2,
+        orig_start: IVec2,
+        orig_end: IVec2,
+        dragged: bool,
+    },
+    CableEndpoint {
+        entity: Entity,
+        which: CableEnd,
+        start_cursor: Vec2,
+        dragged: bool,
+    },
 }
+
+/// Tracks which candidate a repeated click at the same grid cell should
+/// select next, so overlapping components/switches can be cycled through
+/// (Figma-style) instead of only ever reaching whichever one a query happens
+/// to visit first.
+#[derive(Resource, Default)]
+pub struct PickCycleState {
+    pub last_cell: Option<IVec2>,
+    pub index: usize,
+}
+
+/// Monotonically increasing z-offset handed out per placement so overlapping
+/// component bodies (now allowed) have a deterministic, later-on-top draw
+/// order instead of an unstable one from same-z sprite batching.
+#[derive(Resource, Default)]
+pub struct SpawnOrderCounter(pub f32);

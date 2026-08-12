@@ -7,8 +7,16 @@ pub const LABEL_FONT_SIZE: f32 = 14.0;
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
 /// a drag (move) rather than a plain click (delete).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
-/// How close (in pixels) a click must land to a wire's line to select it in Edit mode.
-pub const WIRE_HIT_DISTANCE: f32 = 6.0;
+/// How close (in pixels) a click must land to a cable's line to select its
+/// body (as opposed to one of its endpoints) in Edit mode.
+pub const CABLE_BODY_HIT_DISTANCE: f32 = 6.0;
+/// How close (in pixels) a click must land to a cable's start/end point to
+/// grab that endpoint specifically, instead of the cable's body.
+pub const CABLE_ENDPOINT_HIT_RADIUS: f32 = 10.0;
+/// Z-offset handed out per placed component so overlapping bodies (overlap
+/// is allowed, needed for the connect-by-contact mechanic) still draw in a
+/// deterministic, later-placed-on-top order.
+pub const SPAWN_Z_STEP: f32 = 0.01;
 
 pub const COLOR_HIGH: Color = Color::srgb(1.0, 0.35, 0.15);
 pub const COLOR_LOW: Color = Color::srgb(0.2, 0.45, 1.0);
