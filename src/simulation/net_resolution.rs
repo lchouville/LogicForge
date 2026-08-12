@@ -157,7 +157,7 @@ mod tests {
     fn pin_node(id: u32, pos: IVec2, role: PinRole) -> NetNode {
         NetNode {
             pos,
-            entity: Entity::from_raw(id),
+            entity: Entity::from_raw_u32(id).unwrap(),
             kind: NodeKind::Pin(role),
         }
     }
@@ -165,7 +165,7 @@ mod tests {
     fn cable_end_node(id: u32, pos: IVec2) -> NetNode {
         NetNode {
             pos,
-            entity: Entity::from_raw(id),
+            entity: Entity::from_raw_u32(id).unwrap(),
             kind: NodeKind::CableEnd,
         }
     }
@@ -185,8 +185,8 @@ mod tests {
             pin_node(1, IVec2::new(5, 5), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[], |_| 0.0);
-        assert_eq!(value_of(Entity::from_raw(0), &writes), 0.0);
-        assert_eq!(value_of(Entity::from_raw(1), &writes), 0.0);
+        assert_eq!(value_of(Entity::from_raw_u32(0).unwrap(), &writes), 0.0);
+        assert_eq!(value_of(Entity::from_raw_u32(1).unwrap(), &writes), 0.0);
     }
 
     #[test]
@@ -196,9 +196,9 @@ mod tests {
             pin_node(1, IVec2::new(0, 0), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[], |e| {
-            if e == Entity::from_raw(0) { 1.0 } else { 0.0 }
+            if e == Entity::from_raw_u32(0).unwrap() { 1.0 } else { 0.0 }
         });
-        assert_eq!(value_of(Entity::from_raw(1), &writes), 1.0);
+        assert_eq!(value_of(Entity::from_raw_u32(1).unwrap(), &writes), 1.0);
     }
 
     #[test]
@@ -209,15 +209,15 @@ mod tests {
             pin_node(2, IVec2::new(0, 0), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[], |e| {
-            if e == Entity::from_raw(0) {
+            if e == Entity::from_raw_u32(0).unwrap() {
                 1.0
-            } else if e == Entity::from_raw(1) {
+            } else if e == Entity::from_raw_u32(1).unwrap() {
                 -1.0
             } else {
                 0.0
             }
         });
-        assert_eq!(value_of(Entity::from_raw(2), &writes), 1.0);
+        assert_eq!(value_of(Entity::from_raw_u32(2).unwrap(), &writes), 1.0);
     }
 
     #[test]
@@ -229,9 +229,9 @@ mod tests {
             pin_node(2, IVec2::new(10, 10), PinRole::Input),
         ];
         let writes = resolve_nets(&nodes, &[(1, 2)], |e| {
-            if e == Entity::from_raw(0) { 1.0 } else { 0.0 }
+            if e == Entity::from_raw_u32(0).unwrap() { 1.0 } else { 0.0 }
         });
-        assert_eq!(value_of(Entity::from_raw(2), &writes), 1.0);
+        assert_eq!(value_of(Entity::from_raw_u32(2).unwrap(), &writes), 1.0);
     }
 
     #[test]
@@ -241,6 +241,6 @@ mod tests {
             cable_end_node(0, IVec2::new(3, 3)),
         ];
         let writes = resolve_nets(&nodes, &[(0, 1)], |_| 0.0);
-        assert_eq!(value_of(Entity::from_raw(0), &writes), 0.0);
+        assert_eq!(value_of(Entity::from_raw_u32(0).unwrap(), &writes), 0.0);
     }
 }
