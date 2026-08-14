@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod gizmos;
 pub mod plugin;
 pub mod sync;

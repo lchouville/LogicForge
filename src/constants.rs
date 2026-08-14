@@ -1,6 +1,9 @@
 use bevy::color::Color;
 
 pub const GRID_CELL_SIZE: f32 = 48.0;
+/// Side length, in pixels, of the fixed pixel-art grid every component
+/// appearance JSON is authored against (see `src/rendering/appearance.rs`).
+pub const PIXEL_GRID_DIM: usize = 16;
 pub const FIXED_TICK_SECONDS: f64 = 0.15;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;

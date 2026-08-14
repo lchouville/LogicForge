@@ -20,6 +20,7 @@ pub fn handle_left_click_start(
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
     mut spawn_order: ResMut<SpawnOrderCounter>,
@@ -46,7 +47,7 @@ pub fn handle_left_click_start(
         } else {
             let z = spawn_order.0;
             spawn_order.0 += SPAWN_Z_STEP;
-            place_tool(&mut commands, tool, cell, z);
+            place_tool(&mut commands, &asset_server, tool, cell, z);
             armed.0 = None;
         }
         return;

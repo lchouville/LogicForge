@@ -4,6 +4,7 @@ use crate::constants::{
     COLOR_GATE, COLOR_LAMP_OFF, COLOR_NEUTRAL, COLOR_SWITCH, GRID_CELL_SIZE, LABEL_FONT_SIZE,
 };
 use crate::grid::cell_to_world;
+use crate::rendering::appearance::PendingAppearance;
 use crate::simulation::components::{
     Cable, GateKind, GridPosition, Lamp, Pin, PinRole, SignalValue, Switch,
 };
@@ -56,13 +57,25 @@ fn gate_label(kind: GateKind) -> &'static str {
     }
 }
 
-pub fn spawn_and_or_gate(commands: &mut Commands, cell: IVec2, kind: GateKind, z: f32) -> Entity {
+pub fn spawn_and_or_gate(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    cell: IVec2,
+    kind: GateKind,
+    z: f32,
+) -> Entity {
     let world = cell_to_world(cell);
+    let appearance_path = match kind {
+        GateKind::And => "appearances/and_gate.json",
+        GateKind::Or => "appearances/or_gate.json",
+        GateKind::Not => "appearances/not_gate.json",
+    };
     commands
         .spawn((
             kind,
             GridPosition(cell),
             body_sprite(COLOR_GATE),
+            PendingAppearance(asset_server.load(appearance_path)),
             Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, PIN_Y_OFFSET)),
@@ -74,13 +87,19 @@ pub fn spawn_and_or_gate(commands: &mut Commands, cell: IVec2, kind: GateKind, z
         .id()
 }
 
-pub fn spawn_not_gate(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
+pub fn spawn_not_gate(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    cell: IVec2,
+    z: f32,
+) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             GateKind::Not,
             GridPosition(cell),
             body_sprite(COLOR_GATE),
+            PendingAppearance(asset_server.load("appearances/not_gate.json")),
             Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, 0.0)),
@@ -91,13 +110,19 @@ pub fn spawn_not_gate(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
         .id()
 }
 
-pub fn spawn_switch(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
+pub fn spawn_switch(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    cell: IVec2,
+    z: f32,
+) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             Switch { on: false },
             GridPosition(cell),
             body_sprite(COLOR_SWITCH),
+            PendingAppearance(asset_server.load("appearances/switch.json")),
             Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Output, 0, Vec2::new(PIN_X_OFFSET, 0.0)),
@@ -107,13 +132,19 @@ pub fn spawn_switch(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
         .id()
 }
 
-pub fn spawn_lamp(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
+pub fn spawn_lamp(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    cell: IVec2,
+    z: f32,
+) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             Lamp,
             GridPosition(cell),
             body_sprite(COLOR_LAMP_OFF),
+            PendingAppearance(asset_server.load("appearances/lamp.json")),
             Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, 0.0)),

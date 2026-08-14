@@ -47,22 +47,28 @@ pub fn pick_entity_at_cell(
     candidates.get(cycle.index).copied()
 }
 
-pub fn place_tool(commands: &mut Commands, tool: ToolKind, cell: IVec2, z: f32) {
+pub fn place_tool(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    tool: ToolKind,
+    cell: IVec2,
+    z: f32,
+) {
     match tool {
         ToolKind::Gate(GateKind::And) => {
-            spawn_and_or_gate(commands, cell, GateKind::And, z);
+            spawn_and_or_gate(commands, asset_server, cell, GateKind::And, z);
         }
         ToolKind::Gate(GateKind::Or) => {
-            spawn_and_or_gate(commands, cell, GateKind::Or, z);
+            spawn_and_or_gate(commands, asset_server, cell, GateKind::Or, z);
         }
         ToolKind::Gate(GateKind::Not) => {
-            spawn_not_gate(commands, cell, z);
+            spawn_not_gate(commands, asset_server, cell, z);
         }
         ToolKind::Switch => {
-            spawn_switch(commands, cell, z);
+            spawn_switch(commands, asset_server, cell, z);
         }
         ToolKind::Lamp => {
-            spawn_lamp(commands, cell, z);
+            spawn_lamp(commands, asset_server, cell, z);
         }
         ToolKind::Cable => {
             // Cables are placed via press+drag (see `handle_left_click_start`
