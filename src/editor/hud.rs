@@ -48,6 +48,7 @@ pub fn spawn_toolbar(mut commands: Commands) {
             tool_button(ToolKind::Gate(GateKind::Not), "3: NOT"),
             tool_button(ToolKind::Switch, "4: Switch"),
             tool_button(ToolKind::Lamp, "5: Lamp"),
+            tool_button(ToolKind::Cable, "6: Cable"),
         ],
     ));
 }
@@ -125,10 +126,10 @@ pub fn sync_mode_label(mode: Res<Mode>, mut labels: Query<&mut Text, With<ModeLa
 fn mode_text(mode: Mode) -> &'static str {
     match mode {
         Mode::Interaction => {
-            "Mode: Interaction — click a switch to toggle, drag pin to pin to wire (Tab to switch)"
+            "Mode: Interaction — click a switch to toggle, hold 6 + drag to place a cable (Tab to switch)"
         }
         Mode::Edit => {
-            "Mode: Edit — drag a component to move it, click it to delete it (Tab to switch)"
+            "Mode: Edit — drag a component/cable body to move it, drag a cable end to reconnect it, click to delete (Tab to switch)"
         }
     }
 }

@@ -34,9 +34,9 @@ pub struct Pin {
 pub struct SignalValue(pub f32);
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Wire {
-    pub from: Entity,
-    pub to: Entity,
+pub struct Cable {
+    pub start: IVec2,
+    pub end: IVec2,
 }
 
 /// Scratch buffer used to hand values from a read-only propagation/evaluation

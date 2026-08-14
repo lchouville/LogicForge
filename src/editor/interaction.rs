@@ -1,14 +1,16 @@
 use bevy::prelude::*;
 
-use crate::constants::COLOR_NEUTRAL;
-use crate::grid::world_to_cell;
-use crate::simulation::components::{GridPosition, Pin, PinRole, SignalValue, Switch, Wire};
+use crate::constants::{COLOR_NEUTRAL, SPAWN_Z_STEP};
+use crate::grid::{cell_to_world, world_to_cell};
+use crate::simulation::components::{GridPosition, SignalValue, Switch};
 
 use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
-use super::placement::{is_cell_occupied, place_tool};
-use super::resources::{ArmedTool, InteractionState, Mode};
-use super::wiring::{find_pin_at, is_pin_wired, is_valid_wire_target};
+use super::placement::{pick_entity_at_cell, place_tool};
+use super::resources::{
+    ArmedTool, InteractionState, Mode, PickCycleState, SpawnOrderCounter, ToolKind,
+};
+use super::spawn::spawn_cable;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_left_click_start(
@@ -20,9 +22,9 @@ pub fn handle_left_click_start(
     mut commands: Commands,
     mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
-    positions: Query<&GridPosition>,
-    pins: Query<(Entity, &Pin, &GlobalTransform)>,
-    mut switches: Query<(&GridPosition, &mut Switch, &Children)>,
+    mut spawn_order: ResMut<SpawnOrderCounter>,
+    mut cycle: ResMut<PickCycleState>,
+    mut switches: Query<(Entity, &GridPosition, &mut Switch, &Children)>,
     mut signals: Query<&mut SignalValue>,
 ) {
     if pointer_over_ui.0 || !buttons.just_pressed(MouseButton::Left) {
@@ -36,67 +38,61 @@ pub fn handle_left_click_start(
 
     if let Some(tool) = armed.0 {
         let cell = world_to_cell(world_pos);
-        if !is_cell_occupied(cell, &positions) {
-            place_tool(&mut commands, tool, cell);
+        if tool == ToolKind::Cable {
+            // Cable placement needs a start *and* end cell, so it doesn't
+            // place immediately like the other tools — it waits for
+            // `handle_left_click_end` to supply the end and disarm.
+            *interaction = InteractionState::PlacingCable { start_cell: cell };
+        } else {
+            let z = spawn_order.0;
+            spawn_order.0 += SPAWN_Z_STEP;
+            place_tool(&mut commands, tool, cell, z);
+            armed.0 = None;
         }
-        // Matches the design doc's default "select + click" behaviour: the tool
-        // disarms after one placement. Holding a modifier for repeated placement
-        // is a later addition, not required for the MVP kernel.
-        armed.0 = None;
         return;
     }
 
-    // Toggling/wiring only applies in Interaction mode; Edit mode's own click
+    // Toggling only applies in Interaction mode; Edit mode's own click
     // handlers own move/delete instead.
     if *mode != Mode::Interaction {
         return;
     }
 
-    if let Some((pin_entity, PinRole::Output)) = find_pin_at(world_pos, &pins) {
-        *interaction = InteractionState::Dragging {
-            from_pin: pin_entity,
-        };
-        return;
-    }
-
     let cell = world_to_cell(world_pos);
-    for (position, mut switch, children) in &mut switches {
-        if position.0 != cell {
-            continue;
+    let candidates: Vec<Entity> = switches
+        .iter()
+        .filter(|(_, position, _, _)| position.0 == cell)
+        .map(|(entity, _, _, _)| entity)
+        .collect();
+    let Some(target) = pick_entity_at_cell(cell, candidates, &mut cycle) else {
+        return;
+    };
+    let Ok((_, _, mut switch, children)) = switches.get_mut(target) else {
+        return;
+    };
+    switch.on = !switch.on;
+    let value = if switch.on { 1.0 } else { 0.0 };
+    for child in children.iter() {
+        if let Ok(mut signal) = signals.get_mut(child) {
+            signal.0 = value;
         }
-        switch.on = !switch.on;
-        let value = if switch.on { 1.0 } else { 0.0 };
-        for child in children.iter() {
-            if let Ok(mut signal) = signals.get_mut(child) {
-                signal.0 = value;
-            }
-        }
-        break;
     }
 }
 
-pub fn render_wire_drag_preview(
+pub fn render_cable_drag_preview(
     interaction: Res<InteractionState>,
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
-    pins: Query<&GlobalTransform, With<Pin>>,
     mut gizmos: Gizmos,
 ) {
-    let InteractionState::Dragging { from_pin } = *interaction else {
+    let InteractionState::PlacingCable { start_cell } = *interaction else {
         return;
     };
     let (camera, camera_transform) = *camera_query;
     let Some(cursor_world) = cursor_world_position(&window, camera, camera_transform) else {
         return;
     };
-    let Ok(from_transform) = pins.get(from_pin) else {
-        return;
-    };
-    gizmos.line_2d(
-        from_transform.translation().truncate(),
-        cursor_world,
-        COLOR_NEUTRAL,
-    );
+    gizmos.line_2d(cell_to_world(start_cell), cursor_world, COLOR_NEUTRAL);
 }
 
 pub fn handle_left_click_end(
@@ -104,31 +100,24 @@ pub fn handle_left_click_end(
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut commands: Commands,
+    mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
-    pins: Query<(Entity, &Pin, &GlobalTransform)>,
-    wires: Query<&Wire>,
 ) {
     if !buttons.just_released(MouseButton::Left) {
         return;
     }
-    let InteractionState::Dragging { from_pin } = *interaction else {
+    let InteractionState::PlacingCable { start_cell } = *interaction else {
         return;
     };
     *interaction = InteractionState::Idle;
+    armed.0 = None;
 
     let (camera, camera_transform) = *camera_query;
     let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
         return;
     };
-    let Some((target_pin, target_role)) = find_pin_at(world_pos, &pins) else {
-        return;
-    };
-
-    let already_wired = is_pin_wired(target_pin, &wires);
-    if is_valid_wire_target(PinRole::Output, target_role, already_wired) {
-        commands.spawn(Wire {
-            from: from_pin,
-            to: target_pin,
-        });
+    let end_cell = world_to_cell(world_pos);
+    if end_cell != start_cell {
+        spawn_cable(&mut commands, start_cell, end_cell);
     }
 }

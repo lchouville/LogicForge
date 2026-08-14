@@ -5,7 +5,7 @@ use crate::constants::{
 };
 use crate::grid::cell_to_world;
 use crate::simulation::components::{
-    GateKind, GridPosition, Lamp, Pin, PinRole, SignalValue, Switch,
+    Cable, GateKind, GridPosition, Lamp, Pin, PinRole, SignalValue, Switch,
 };
 
 const BODY_SIZE: f32 = GRID_CELL_SIZE * 0.9;
@@ -56,14 +56,14 @@ fn gate_label(kind: GateKind) -> &'static str {
     }
 }
 
-pub fn spawn_and_or_gate(commands: &mut Commands, cell: IVec2, kind: GateKind) -> Entity {
+pub fn spawn_and_or_gate(commands: &mut Commands, cell: IVec2, kind: GateKind, z: f32) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             kind,
             GridPosition(cell),
             body_sprite(COLOR_GATE),
-            Transform::from_translation(world.extend(0.0)),
+            Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, PIN_Y_OFFSET)),
                 pin(PinRole::Input, 1, Vec2::new(-PIN_X_OFFSET, -PIN_Y_OFFSET)),
@@ -74,14 +74,14 @@ pub fn spawn_and_or_gate(commands: &mut Commands, cell: IVec2, kind: GateKind) -
         .id()
 }
 
-pub fn spawn_not_gate(commands: &mut Commands, cell: IVec2) -> Entity {
+pub fn spawn_not_gate(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             GateKind::Not,
             GridPosition(cell),
             body_sprite(COLOR_GATE),
-            Transform::from_translation(world.extend(0.0)),
+            Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, 0.0)),
                 pin(PinRole::Output, 0, Vec2::new(PIN_X_OFFSET, 0.0)),
@@ -91,14 +91,14 @@ pub fn spawn_not_gate(commands: &mut Commands, cell: IVec2) -> Entity {
         .id()
 }
 
-pub fn spawn_switch(commands: &mut Commands, cell: IVec2) -> Entity {
+pub fn spawn_switch(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             Switch { on: false },
             GridPosition(cell),
             body_sprite(COLOR_SWITCH),
-            Transform::from_translation(world.extend(0.0)),
+            Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Output, 0, Vec2::new(PIN_X_OFFSET, 0.0)),
                 label("SW"),
@@ -107,18 +107,24 @@ pub fn spawn_switch(commands: &mut Commands, cell: IVec2) -> Entity {
         .id()
 }
 
-pub fn spawn_lamp(commands: &mut Commands, cell: IVec2) -> Entity {
+pub fn spawn_lamp(commands: &mut Commands, cell: IVec2, z: f32) -> Entity {
     let world = cell_to_world(cell);
     commands
         .spawn((
             Lamp,
             GridPosition(cell),
             body_sprite(COLOR_LAMP_OFF),
-            Transform::from_translation(world.extend(0.0)),
+            Transform::from_translation(world.extend(z)),
             children![
                 pin(PinRole::Input, 0, Vec2::new(-PIN_X_OFFSET, 0.0)),
                 label("LMP"),
             ],
         ))
+        .id()
+}
+
+pub fn spawn_cable(commands: &mut Commands, start: IVec2, end: IVec2) -> Entity {
+    commands
+        .spawn((Cable { start, end }, SignalValue::default()))
         .id()
 }
