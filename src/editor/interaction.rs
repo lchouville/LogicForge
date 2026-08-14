@@ -10,7 +10,7 @@ use super::placement::{pick_entity_at_cell, place_tool};
 use super::resources::{
     ArmedTool, InteractionState, Mode, PickCycleState, SpawnOrderCounter, ToolKind,
 };
-use super::spawn::spawn_cable;
+use crate::rendering::cable::spawn_cable;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_left_click_start(
@@ -101,6 +101,7 @@ pub fn handle_left_click_end(
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
 ) {
@@ -119,6 +120,6 @@ pub fn handle_left_click_end(
     };
     let end_cell = world_to_cell(world_pos);
     if end_cell != start_cell {
-        spawn_cable(&mut commands, start_cell, end_cell);
+        spawn_cable(&mut commands, &asset_server, start_cell, end_cell);
     }
 }

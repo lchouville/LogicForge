@@ -1,5 +1,5 @@
 pub mod appearance;
-pub mod gizmos;
+pub mod cable;
 pub mod plugin;
 pub mod sync;
 

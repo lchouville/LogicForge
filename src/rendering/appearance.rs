@@ -6,14 +6,18 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use serde::Deserialize;
 
-use crate::constants::PIXEL_GRID_DIM;
+use crate::constants::{PIXEL_GRID_DIM, PIXEL_UNIT};
 
-/// The hand-authored JSON schema: a palette of `#RRGGBBAA` hex colors and a
-/// flat, row-major array of palette indices for the fixed
-/// `PIXEL_GRID_DIM x PIXEL_GRID_DIM` grid. A palette entry with alpha `00`
-/// doubles as "empty pixel" — no separate transparency sentinel needed.
+/// The hand-authored JSON schema: an explicit `width`/`height` (each a
+/// multiple of `PIXEL_GRID_DIM`, since a canvas can span several grid-cell
+/// blocks — e.g. a 2-cell-tall gate body), a palette of `#RRGGBBAA` hex
+/// colors, and a flat, row-major array of palette indices. A palette entry
+/// with alpha `00` doubles as "empty pixel" — no separate transparency
+/// sentinel needed.
 #[derive(Deserialize)]
 struct AppearanceJson {
+    width: usize,
+    height: usize,
     palette: Vec<String>,
     pixels: Vec<u8>,
 }
@@ -22,13 +26,25 @@ struct AppearanceJson {
 /// to be baked into a procedural [`Image`] by [`build_image`].
 #[derive(Asset, TypePath, Debug)]
 pub struct Appearance {
+    pub width: usize,
+    pub height: usize,
     pixels: Vec<[u8; 4]>,
+}
+
+impl Appearance {
+    /// The size this appearance renders at once stretched onto a `Sprite`:
+    /// each texel is exactly `PIXEL_UNIT` world units, so a
+    /// `PIXEL_GRID_DIM`-wide block always lands on one grid cell.
+    pub fn size_world_units(&self) -> bevy::math::Vec2 {
+        bevy::math::Vec2::new(self.width as f32, self.height as f32) * PIXEL_UNIT
+    }
 }
 
 #[derive(Debug)]
 pub enum AppearanceError {
     Io(std::io::Error),
     Json(serde_json::Error),
+    InvalidDimensions { width: usize, height: usize },
     WrongPixelCount { expected: usize, actual: usize },
     InvalidHexColor(String),
     PaletteIndexOutOfRange { index: u8, palette_len: usize },
@@ -39,9 +55,13 @@ impl fmt::Display for AppearanceError {
         match self {
             Self::Io(err) => write!(f, "failed to read appearance file: {err}"),
             Self::Json(err) => write!(f, "failed to parse appearance JSON: {err}"),
+            Self::InvalidDimensions { width, height } => write!(
+                f,
+                "appearance is {width}x{height}, but both dimensions must be a positive multiple of {PIXEL_GRID_DIM}"
+            ),
             Self::WrongPixelCount { expected, actual } => write!(
                 f,
-                "appearance has {actual} pixels, expected exactly {expected} ({PIXEL_GRID_DIM}x{PIXEL_GRID_DIM})"
+                "appearance has {actual} pixels, expected exactly {expected} (width*height)"
             ),
             Self::InvalidHexColor(hex) => {
                 write!(f, "'{hex}' is not a valid #RRGGBBAA hex color")
@@ -83,7 +103,17 @@ fn parse_hex_rgba(hex: &str) -> Result<[u8; 4], AppearanceError> {
 
 impl Appearance {
     fn from_json(json: AppearanceJson) -> Result<Self, AppearanceError> {
-        let expected = PIXEL_GRID_DIM * PIXEL_GRID_DIM;
+        if json.width == 0
+            || json.height == 0
+            || !json.width.is_multiple_of(PIXEL_GRID_DIM)
+            || !json.height.is_multiple_of(PIXEL_GRID_DIM)
+        {
+            return Err(AppearanceError::InvalidDimensions {
+                width: json.width,
+                height: json.height,
+            });
+        }
+        let expected = json.width * json.height;
         if json.pixels.len() != expected {
             return Err(AppearanceError::WrongPixelCount {
                 expected,
@@ -101,17 +131,20 @@ impl Appearance {
             .pixels
             .iter()
             .map(|&index| {
-                palette
-                    .get(index as usize)
-                    .copied()
-                    .ok_or(AppearanceError::PaletteIndexOutOfRange {
+                palette.get(index as usize).copied().ok_or(
+                    AppearanceError::PaletteIndexOutOfRange {
                         index,
                         palette_len: palette.len(),
-                    })
+                    },
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self { pixels })
+        Ok(Self {
+            width: json.width,
+            height: json.height,
+            pixels,
+        })
     }
 }
 
@@ -125,8 +158,8 @@ pub fn build_image(appearance: &Appearance) -> Image {
     }
     Image::new(
         Extent3d {
-            width: PIXEL_GRID_DIM as u32,
-            height: PIXEL_GRID_DIM as u32,
+            width: appearance.width as u32,
+            height: appearance.height as u32,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -175,9 +208,9 @@ pub fn apply_loaded_appearances(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     appearances: Res<Assets<Appearance>>,
-    pending: Query<(Entity, &PendingAppearance, &Sprite)>,
+    pending: Query<(Entity, &PendingAppearance)>,
 ) {
-    for (entity, pending_appearance, sprite) in &pending {
+    for (entity, pending_appearance) in &pending {
         let Some(appearance) = appearances.get(&pending_appearance.0) else {
             continue;
         };
@@ -186,7 +219,7 @@ pub fn apply_loaded_appearances(
             .entity(entity)
             .insert(Sprite {
                 image: handle,
-                custom_size: sprite.custom_size,
+                custom_size: Some(appearance.size_world_units()),
                 ..default()
             })
             .remove::<PendingAppearance>();
@@ -204,6 +237,8 @@ mod tests {
     #[test]
     fn from_json_resolves_palette_indices_to_rgba() {
         let json = AppearanceJson {
+            width: PIXEL_GRID_DIM,
+            height: PIXEL_GRID_DIM,
             palette: vec!["#ff0000ff".to_string(), "#00000000".to_string()],
             pixels: full_grid_pixels(|i| if i % 2 == 0 { 0 } else { 1 }),
         };
@@ -217,6 +252,8 @@ mod tests {
     #[test]
     fn from_json_rejects_wrong_pixel_count() {
         let json = AppearanceJson {
+            width: PIXEL_GRID_DIM,
+            height: PIXEL_GRID_DIM,
             palette: vec!["#000000ff".to_string()],
             pixels: vec![0; 10],
         };
@@ -232,10 +269,25 @@ mod tests {
     }
 
     #[test]
+    fn from_json_rejects_dimensions_not_a_multiple_of_the_block_size() {
+        let json = AppearanceJson {
+            width: PIXEL_GRID_DIM + 1,
+            height: PIXEL_GRID_DIM,
+            palette: vec!["#000000ff".to_string()],
+            pixels: vec![0; (PIXEL_GRID_DIM + 1) * PIXEL_GRID_DIM],
+        };
+
+        let err = Appearance::from_json(json).unwrap_err();
+        assert!(matches!(err, AppearanceError::InvalidDimensions { .. }));
+    }
+
+    #[test]
     fn from_json_rejects_out_of_range_palette_index() {
         let mut pixels = full_grid_pixels(|_| 0);
         pixels[42] = 5;
         let json = AppearanceJson {
+            width: PIXEL_GRID_DIM,
+            height: PIXEL_GRID_DIM,
             palette: vec!["#000000ff".to_string()],
             pixels,
         };
@@ -253,6 +305,8 @@ mod tests {
     #[test]
     fn from_json_rejects_invalid_hex_color() {
         let json = AppearanceJson {
+            width: PIXEL_GRID_DIM,
+            height: PIXEL_GRID_DIM,
             palette: vec!["not-a-color".to_string()],
             pixels: full_grid_pixels(|_| 0),
         };
@@ -264,6 +318,8 @@ mod tests {
     #[test]
     fn build_image_flattens_pixels_into_rgba8_bytes() {
         let appearance = Appearance {
+            width: PIXEL_GRID_DIM,
+            height: PIXEL_GRID_DIM,
             pixels: vec![[10, 20, 30, 40]; PIXEL_GRID_DIM * PIXEL_GRID_DIM],
         };
 
@@ -274,5 +330,19 @@ mod tests {
         let data = image.data.expect("procedurally built image must have data");
         assert_eq!(data.len(), PIXEL_GRID_DIM * PIXEL_GRID_DIM * 4);
         assert_eq!(&data[0..4], &[10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn size_world_units_scales_by_pixel_unit() {
+        let appearance = Appearance {
+            width: PIXEL_GRID_DIM,
+            height: 2 * PIXEL_GRID_DIM,
+            pixels: vec![[0, 0, 0, 0]; PIXEL_GRID_DIM * 2 * PIXEL_GRID_DIM],
+        };
+
+        let size = appearance.size_world_units();
+
+        assert_eq!(size.x, PIXEL_GRID_DIM as f32 * PIXEL_UNIT);
+        assert_eq!(size.y, 2.0 * PIXEL_GRID_DIM as f32 * PIXEL_UNIT);
     }
 }

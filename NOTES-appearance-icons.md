@@ -65,3 +65,48 @@ Everything is committed and pushed to `origin/feature/pixel-art-appearances`. Th
 Look at the reference PNGs together with the user, resolve the three open questions
 above, then redraw the 5 body icons (and decide on pins/cables/nodes scope) to match
 the real target style before finalizing this PR.
+
+## 2026-08-15 session: cable compositing attempt — still visually wrong
+
+Answered open question #2/#3 above: went with real pixel-art for pins/nodes/cables
+(not procedural-flat squares), and for the cable specifically chose "one neutral
+texture tinted per signal state" over "3 hand-drawn baked textures", to match how
+`Pin` already works (`sync_pin_colors` tints `pin.json` via `sprite.color`).
+
+Implemented in this session (uncommitted until this WIP commit):
+
+- `src/rendering/cable.rs` rewritten: a cable is now a fixed parent entity with 3
+  visual children synced every frame by `sync_cable_sprite` — a `CableCenter`
+  (`cable_center.json`, stretched+rotated to span `start`→`end`) and two
+  `CableEndpoint`s at the ends (reuse `pin.json`+`node.json`, same art as a real
+  component `Pin`, just without the logical `Pin` component since `Cable` already
+  carries its own `SignalValue`).
+- Deleted `cable_on.json`/`cable_off.json`/`cable_negativ.json` (the old baked
+  full-cable textures — `cable_on`/`cable_negativ` were actually corrupted, copied
+  from `and_gate.json` by mistake in the prior checkpoint).
+- Added `assets/appearances/cable_center.json`: a plain white/gray 16x16 bar, tinted
+  at runtime like a pin.
+- `signal_color()` extracted to `src/rendering/sync.rs` as the one shared
+  state->color mapping, used by both `sync_pin_colors` and `sync_cable_sprite`.
+
+**Still doesn't look right in-game (user's call after `cargo run`).** Likely root
+cause, found *after* implementing, by actually opening
+`assets/appearances/ref/cable_*.png`:
+
+- The reference cables (`ref/cable_on|off|negativ.png`, 48x16) are **not** a
+  stretchable strand + generic pin caps at all — each is a small, fixed-size
+  "resistor"-style capsule icon with two short prongs, hand-drawn distinctly per
+  state (on = yellow-green, off = blue-gray, negativ = red-orange). That's a
+  fundamentally different shape than what got built: a thin tinted bar between two
+  reused-`pin.json` circular caps.
+- `ref/pin.png` is a small yellow/orange rounded blob — doesn't obviously match
+  reusing the existing (white/gray, larger) `pin.json` asset tinted by
+  `COLOR_HIGH`/`COLOR_LOW`/`COLOR_NEUTRAL` either; unclear if the ref pin is meant
+  to be one specific signal state's color or its own fixed look.
+
+Open question for tomorrow: does the cable stay a variable-length stretched sprite
+(current architecture, needed since cables span arbitrary grid distances) with new
+art redrawn to fit that shape, or does the *reference* imply cables should render
+as a fixed-size icon regardless of span (i.e. a different rendering model entirely,
+closer to the resistor-icon reference)? Resolve this with the user before redrawing
+`cable_center.json`/`pin.json`/`node.json`.

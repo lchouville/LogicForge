@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use super::appearance::{apply_loaded_appearances, Appearance, AppearanceLoader};
-use super::gizmos::draw_cables;
+use super::appearance::{Appearance, AppearanceLoader, apply_loaded_appearances};
+use super::cable::sync_cable_sprite;
 use super::sync::{sync_lamp_brightness, sync_pin_colors};
 
 pub struct RenderingPlugin;
@@ -16,7 +16,7 @@ impl Plugin for RenderingPlugin {
                     apply_loaded_appearances,
                     sync_pin_colors,
                     sync_lamp_brightness,
-                    draw_cables,
+                    sync_cable_sprite,
                 )
                     .chain(),
             );
