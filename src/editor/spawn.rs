@@ -168,10 +168,7 @@ pub fn spawn_and_or_gate(
                     0,
                     Vec2::new(-PIN_X_OFFSET, PIN_Y_OFFSET)
                 ),
-                leg(
-                    asset_server,
-                    Vec2::new(-PIN_X_OFFSET / 2.0, PIN_Y_OFFSET)
-                ),
+                leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, PIN_Y_OFFSET)),
                 label(gate_label(kind), body_offset),
             ],
         ))
@@ -268,4 +265,3 @@ pub fn spawn_lamp(
         ))
         .id()
 }
-

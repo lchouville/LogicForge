@@ -41,7 +41,9 @@ pub fn sync_background_grid(
 
     if !*ran_once || !resized_windows.is_empty() {
         let bounds = camera.logical_viewport_size().and_then(|viewport_size| {
-            let top_left = camera.viewport_to_world_2d(camera_transform, Vec2::ZERO).ok()?;
+            let top_left = camera
+                .viewport_to_world_2d(camera_transform, Vec2::ZERO)
+                .ok()?;
             let bottom_right = camera
                 .viewport_to_world_2d(camera_transform, viewport_size)
                 .ok()?;

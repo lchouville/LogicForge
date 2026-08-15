@@ -108,13 +108,14 @@ pub fn rebuild_cable_segments(
 /// the start-end line (cables aren't constrained to axis-aligned runs, so a
 /// per-tile rotation handles any angle) while pinning the two endpoint caps
 /// exactly on `start`/`end`.
+#[allow(clippy::type_complexity)]
 pub fn sync_cable_sprite(
     cables: Query<(&Cable, &SignalValue, &Children)>,
-    mut segments: Query<(&mut Sprite, &mut Transform), (With<CableSegment>, Without<CableEndpoint>)>,
-    mut endpoints: Query<
-        (&CableEndpoint, &mut Sprite, &mut Transform),
-        Without<CableSegment>,
+    mut segments: Query<
+        (&mut Sprite, &mut Transform),
+        (With<CableSegment>, Without<CableEndpoint>),
     >,
+    mut endpoints: Query<(&CableEndpoint, &mut Sprite, &mut Transform), Without<CableSegment>>,
 ) {
     for (cable, signal, children) in &cables {
         let color = signal_color(read_logic(signal.0));
