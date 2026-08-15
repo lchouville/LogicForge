@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::constants::{
     COLOR_GATE, COLOR_LAMP_OFF, COLOR_NEUTRAL, COLOR_SWITCH, GRID_CELL_SIZE, LABEL_FONT_SIZE,
+    PREVIEW_ALPHA, PREVIEW_Z,
 };
 use crate::grid::cell_to_world;
 use crate::rendering::appearance::PendingAppearance;
@@ -9,18 +10,35 @@ use crate::simulation::components::{
     GateKind, GridPosition, Lamp, Pin, PinRole, SignalValue, Switch,
 };
 
+use super::preview::{PlacementPreview, PlacementPreviewTint};
+use super::resources::ToolKind;
+
 // Pins sit exactly one grid step away from the body's anchor row, i.e. on a
 // neighbouring grid node, so cables always run node-to-node instead of a
 // fractional offset.
 const PIN_X_OFFSET: f32 = GRID_CELL_SIZE;
 const PIN_Y_OFFSET: f32 = GRID_CELL_SIZE;
+
+/// Turns a pre-placement facing (0-3 quarter-turns, see `PendingRotation`)
+/// into the root `Transform`'s rotation. Every pin/leg/label offset below is
+/// authored for facing 0 as a plain local `Vec2` on a child of the root, so
+/// rotating just the root here is enough to correctly carry the whole
+/// layout with it through Bevy's normal transform propagation — including,
+/// conveniently, net resolution's `world_to_cell` reads of each pin's
+/// `GlobalTransform`, since every offset here is an exact multiple of
+/// `GRID_CELL_SIZE` and a quarter-turn of an exact grid offset is still an
+/// exact grid offset. Negated so increasing `rotation` turns clockwise on
+/// screen (Bevy's positive Z-rotation is counter-clockwise).
+pub(crate) fn facing_quat(rotation: u8) -> Quat {
+    Quat::from_rotation_z(-(rotation as f32) * std::f32::consts::FRAC_PI_2)
+}
 // A 2-input gate's footprint is 3 nodes wide x 2 nodes tall: the two input
 // rows ARE the two grid nodes (anchor row + one row up), not the anchor row
 // +/- a full row each, which would make the pins' own cells overhang the
 // body by half a row and inflate the footprint to 3 tall. The body sprite
 // (2 blocks tall) is centered on the midpoint between those two rows, i.e.
 // nudged up by half a cell from the anchor.
-const GATE_BODY_ROW_OFFSET: f32 = GRID_CELL_SIZE / 2.0;
+pub(crate) const GATE_BODY_ROW_OFFSET: f32 = GRID_CELL_SIZE / 2.0;
 
 /// A flat-color placeholder shown at roughly the final footprint while a
 /// body's real pixel-art appearance streams in asynchronously (see
@@ -51,6 +69,18 @@ fn pin(asset_server: &AssetServer, role: PinRole, index: u8, offset: Vec2) -> im
     )
 }
 
+/// A visual-only stand-in for `pin()`, used by the placement preview: same
+/// `pin.json` art and offset as a real pin, but none of the logic
+/// components (`Pin`, `SignalValue`) — a preview ghost must never become a
+/// real net-resolution node.
+fn pin_ghost(asset_server: &AssetServer, offset: Vec2) -> impl Bundle {
+    (
+        placeholder_sprite(COLOR_NEUTRAL, 1.0, 1.0),
+        PendingAppearance(asset_server.load("appearances/pin.json")),
+        Transform::from_translation(offset.extend(1.0)),
+    )
+}
+
 /// A short metal "leg" bridging the visual gap between a pin's own drawn
 /// circle and the body's drawn edge — the two grid cells already touch, but
 /// each piece of art has its own margin inside its cell, so without this a
@@ -71,14 +101,14 @@ fn leg(asset_server: &AssetServer, offset: Vec2) -> impl Bundle {
     )
 }
 
-fn label(text: &str, offset: Vec2) -> impl Bundle {
+fn label(text: &str, offset: Vec2, color: Color) -> impl Bundle {
     (
         Text2d::new(text),
         TextFont {
             font_size: LABEL_FONT_SIZE.into(),
             ..default()
         },
-        TextColor(Color::WHITE),
+        TextColor(color),
         Transform::from_translation(offset.extend(2.0)),
     )
 }
@@ -125,6 +155,7 @@ pub fn spawn_and_or_gate(
     asset_server: &AssetServer,
     cell: IVec2,
     kind: GateKind,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -133,7 +164,7 @@ pub fn spawn_and_or_gate(
         .spawn((
             kind,
             GridPosition(cell),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             Visibility::default(),
             children![
                 // 2 blocks tall, centered between the anchor row and the row
@@ -169,7 +200,7 @@ pub fn spawn_and_or_gate(
                     Vec2::new(-PIN_X_OFFSET, PIN_Y_OFFSET)
                 ),
                 leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, PIN_Y_OFFSET)),
-                label(gate_label(kind), body_offset),
+                label(gate_label(kind), body_offset, Color::WHITE),
             ],
         ))
         .id()
@@ -179,6 +210,7 @@ pub fn spawn_not_gate(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -188,7 +220,7 @@ pub fn spawn_not_gate(
             GridPosition(cell),
             placeholder_sprite(COLOR_GATE, 1.0, 1.0),
             PendingAppearance(asset_server.load(gate_appearance_path(GateKind::Not))),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -204,7 +236,7 @@ pub fn spawn_not_gate(
                     Vec2::new(PIN_X_OFFSET, 0.0)
                 ),
                 leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
-                label(gate_label(GateKind::Not), Vec2::ZERO),
+                label(gate_label(GateKind::Not), Vec2::ZERO, Color::WHITE),
             ],
         ))
         .id()
@@ -214,6 +246,7 @@ pub fn spawn_switch(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -223,7 +256,7 @@ pub fn spawn_switch(
             GridPosition(cell),
             placeholder_sprite(COLOR_SWITCH, 1.0, 1.0),
             PendingAppearance(asset_server.load("appearances/switch.json")),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -232,7 +265,7 @@ pub fn spawn_switch(
                     Vec2::new(PIN_X_OFFSET, 0.0)
                 ),
                 leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
-                label("SW", Vec2::ZERO),
+                label("SW", Vec2::ZERO, Color::WHITE),
             ],
         ))
         .id()
@@ -242,6 +275,7 @@ pub fn spawn_lamp(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -251,7 +285,7 @@ pub fn spawn_lamp(
             GridPosition(cell),
             placeholder_sprite(COLOR_LAMP_OFF, 1.0, 1.0),
             PendingAppearance(asset_server.load("appearances/lamp.json")),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -260,8 +294,164 @@ pub fn spawn_lamp(
                     Vec2::new(-PIN_X_OFFSET, 0.0)
                 ),
                 leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, 0.0)),
-                label("LMP", Vec2::ZERO),
+                label("LMP", Vec2::ZERO, Color::WHITE),
             ],
         ))
         .id()
+}
+
+/// Ghosts the given tool's full body + legs + pins + label at `cell`,
+/// dimmed by `tint_placement_preview` (and the label's own pre-dimmed
+/// color, since `Text2d` has no `Sprite` for that system to tint). Mirrors
+/// each `spawn_*` function's layout above exactly, minus every logic
+/// component (`GateKind`, `GridPosition`, `Pin`, `SignalValue`, `Switch`,
+/// `Lamp`) — a preview must be purely visual, never a real entity the
+/// simulation or net resolution would pick up. No case for `ToolKind::Cable`
+/// — it gets its own live preview once the player starts dragging (see
+/// `render_cable_drag_preview`), and has no single fixed footprint to ghost
+/// before that.
+pub fn spawn_placement_preview(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    tool: ToolKind,
+    cell: IVec2,
+    rotation: u8,
+) {
+    let world = cell_to_world(cell);
+    let label_color = Color::WHITE.with_alpha(PREVIEW_ALPHA);
+
+    // Built with `.with_children()` (imperative spawn-per-child) rather than
+    // the `children![...]` macro the real `spawn_*` functions above use —
+    // no functional difference, just what this was rewritten to while
+    // chasing an unrelated bug (see `PREVIEW_Z`'s doc comment).
+    let mut root = commands.spawn((
+        PlacementPreview,
+        Transform::from_translation(world.extend(PREVIEW_Z)).with_rotation(facing_quat(rotation)),
+        Visibility::default(),
+    ));
+
+    match tool {
+        ToolKind::Gate(kind @ (GateKind::And | GateKind::Or)) => {
+            let body_offset = Vec2::new(0.0, GATE_BODY_ROW_OFFSET);
+            root.with_children(|parent| {
+                parent.spawn((
+                    PlacementPreviewTint,
+                    body(
+                        asset_server,
+                        gate_appearance_path(kind),
+                        COLOR_GATE,
+                        1.0,
+                        2.0,
+                        body_offset,
+                    ),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(-PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(-PIN_X_OFFSET, PIN_Y_OFFSET)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, PIN_Y_OFFSET)),
+                ));
+                parent.spawn(label(gate_label(kind), body_offset, label_color));
+            });
+        }
+        ToolKind::Gate(GateKind::Not) => {
+            root.with_children(|parent| {
+                parent.spawn((
+                    PlacementPreviewTint,
+                    body(
+                        asset_server,
+                        gate_appearance_path(GateKind::Not),
+                        COLOR_GATE,
+                        1.0,
+                        1.0,
+                        Vec2::ZERO,
+                    ),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(-PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn(label(gate_label(GateKind::Not), Vec2::ZERO, label_color));
+            });
+        }
+        ToolKind::Switch => {
+            root.with_children(|parent| {
+                parent.spawn((
+                    PlacementPreviewTint,
+                    body(
+                        asset_server,
+                        "appearances/switch.json",
+                        COLOR_SWITCH,
+                        1.0,
+                        1.0,
+                        Vec2::ZERO,
+                    ),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn(label("SW", Vec2::ZERO, label_color));
+            });
+        }
+        ToolKind::Lamp => {
+            root.with_children(|parent| {
+                parent.spawn((
+                    PlacementPreviewTint,
+                    body(
+                        asset_server,
+                        "appearances/lamp.json",
+                        COLOR_LAMP_OFF,
+                        1.0,
+                        1.0,
+                        Vec2::ZERO,
+                    ),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(-PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn(label("LMP", Vec2::ZERO, label_color));
+            });
+        }
+        ToolKind::Cable => {}
+    }
 }

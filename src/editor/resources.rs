@@ -18,6 +18,15 @@ pub enum ToolKind {
 #[derive(Resource, Default)]
 pub struct ArmedTool(pub Option<ToolKind>);
 
+/// The armed tool's pending orientation, in quarter-turns (0-3) applied
+/// clockwise before placement — `R` or the right arrow key advances it,
+/// left arrow backs it up. Reset to 0 whenever a tool is (re)armed, so it
+/// never silently carries a stale rotation into an unrelated placement; not
+/// meaningful for `ToolKind::Cable`, whose orientation comes from the drag
+/// itself.
+#[derive(Resource, Default)]
+pub struct PendingRotation(pub u8);
+
 #[derive(Resource, Default, Clone, Copy)]
 pub enum InteractionState {
     #[default]
@@ -29,7 +38,8 @@ pub enum InteractionState {
 
 /// Which of the two mutually exclusive click modes is active (toggled by a
 /// single key). Interaction: toggle switches, drag wires between pins. Edit:
-/// hold-drag a component to move it, plain-click it to delete it.
+/// hold-drag a component to move it, plain-click it to select it (Delete/
+/// Backspace removes the current `Selected` entity).
 #[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     #[default]
@@ -60,6 +70,13 @@ pub enum EditDragState {
         dragged: bool,
     },
 }
+
+/// The entity (placed component or cable) selected by a plain, non-dragged
+/// click in Edit mode — highlighted by `render_selection_highlight` and
+/// removed by `handle_delete_selected` on Delete/Backspace. Cleared on
+/// clicking empty space, switching mode, or deleting the selection itself.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Selected(pub Option<Entity>);
 
 /// Tracks which candidate a repeated click at the same grid cell should
 /// select next, so overlapping components/switches can be cycled through

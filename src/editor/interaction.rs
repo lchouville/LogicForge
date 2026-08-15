@@ -8,7 +8,7 @@ use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
 use super::placement::{pick_entity_at_cell, place_tool};
 use super::resources::{
-    ArmedTool, InteractionState, Mode, PickCycleState, SpawnOrderCounter, ToolKind,
+    ArmedTool, InteractionState, Mode, PendingRotation, PickCycleState, SpawnOrderCounter, ToolKind,
 };
 use crate::rendering::cable::spawn_cable;
 
@@ -22,6 +22,7 @@ pub fn handle_left_click_start(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut armed: ResMut<ArmedTool>,
+    mut rotation: ResMut<PendingRotation>,
     mut interaction: ResMut<InteractionState>,
     mut spawn_order: ResMut<SpawnOrderCounter>,
     mut cycle: ResMut<PickCycleState>,
@@ -47,8 +48,9 @@ pub fn handle_left_click_start(
         } else {
             let z = spawn_order.0;
             spawn_order.0 += SPAWN_Z_STEP;
-            place_tool(&mut commands, &asset_server, tool, cell, z);
+            place_tool(&mut commands, &asset_server, tool, cell, rotation.0, z);
             armed.0 = None;
+            rotation.0 = 0;
         }
         return;
     }

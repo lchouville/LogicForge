@@ -11,11 +11,22 @@ pub const PIXEL_GRID_DIM: usize = 16;
 /// `GRID_CELL_SIZE`, keeping every pixel-art asset grid-aligned regardless
 /// of its native resolution.
 pub const PIXEL_UNIT: f32 = GRID_CELL_SIZE / PIXEL_GRID_DIM as f32;
-pub const FIXED_TICK_SECONDS: f64 = 0.15;
+/// The simulation's time model: 1 tick = 1ms. Net/wire connectivity has no
+/// propagation delay of its own — a net (see `stage_net_resolution`) is
+/// fully resolved within the tick it's computed in, so a wire "lights up"
+/// instantly. Each *gate* a signal passes through does cost one tick of
+/// latency, though: `stage_net_resolution` (which feeds every gate's
+/// inputs) runs before `stage_gate_evaluation` in the same tick, so a
+/// gate's newly-computed output isn't visible to net resolution until the
+/// *next* tick. At 1ms that's imperceptible to a player even through a long
+/// chain of gates, while still giving the simulation a well-defined,
+/// per-gate notion of propagation delay — relevant later for anything that
+/// cares about ordering or timing (the Horloge/Clock, sequential logic).
+pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
-/// a drag (move) rather than a plain click (delete).
+/// a drag (move) rather than a plain click (select).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
@@ -37,6 +48,19 @@ pub const BACKGROUND_GRID_Z: f32 = -200.0;
 /// backdrop (graph-paper/PCB reference grid) rather than compete visually
 /// with placed components.
 pub const BACKGROUND_GRID_ALPHA: f32 = 0.35;
+/// Fixed z for the armed-tool placement-preview ghost — above everything
+/// else (placed components, cables, the background grid) so it's always
+/// clearly visible regardless of what's already on the cell underneath.
+/// `SPAWN_Z_STEP`-incrementing real components stay well under 100 even for
+/// a very large circuit, so this has a huge margin below it; deliberately
+/// NOT pushed any higher than that, because Bevy's default 2D camera clips
+/// at z=1000 — a previous value of 1000.0 here put pin/label children (at a
+/// small *positive* local z on top of the ghost's own root z) just past
+/// that far plane, silently culling them despite spawning correctly.
+pub const PREVIEW_Z: f32 = 500.0;
+/// Opacity of the placement-preview ghost: dim enough to read unmistakably
+/// as "not placed yet" next to a real, fully-opaque component.
+pub const PREVIEW_ALPHA: f32 = 0.45;
 
 pub const COLOR_HIGH: Color = Color::srgb(1.0, 0.35, 0.15);
 pub const COLOR_LOW: Color = Color::srgb(0.2, 0.45, 1.0);
@@ -49,3 +73,16 @@ pub const COLOR_LAMP_OFF: Color = Color::srgb(0.25, 0.2, 0.1);
 pub const COLOR_BUTTON_NORMAL: Color = Color::srgb(0.15, 0.15, 0.18);
 pub const COLOR_BUTTON_ARMED: Color = Color::srgb(0.2, 0.5, 0.25);
 pub const COLOR_BUTTON_BORDER: Color = Color::srgb(0.6, 0.6, 0.65);
+
+/// Outline color for the currently-selected entity in Edit mode (see
+/// `Selected`) — bright magenta, chosen to stand out against every other
+/// color in the palette above (grays, yellow switch, red/blue signal tints).
+pub const COLOR_SELECTION: Color = Color::srgb(1.0, 0.25, 0.85);
+/// Outline color for whatever's under the cursor in Edit mode, before it's
+/// clicked (see `render_hover_highlight`) — a dimmer cyan, distinct from
+/// `COLOR_SELECTION` so a hovered-but-not-selected element never reads as
+/// already selected.
+pub const COLOR_HOVER: Color = Color::srgb(0.35, 0.85, 0.95);
+/// Extra padding (world units) added around a selected component's footprint
+/// so the outline reads as "around" the sprite rather than clipping it.
+pub const SELECTION_OUTLINE_MARGIN: f32 = 6.0;

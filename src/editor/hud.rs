@@ -5,7 +5,7 @@ use crate::constants::{
 };
 use crate::simulation::components::GateKind;
 
-use super::resources::{ArmedTool, Mode, ToolKind};
+use super::resources::{ArmedTool, Mode, PendingRotation, ToolKind};
 
 #[derive(Component)]
 pub struct ModeLabel;
@@ -80,11 +80,13 @@ fn tool_button(tool: ToolKind, label: &str) -> impl Bundle {
 
 pub fn handle_tool_button_click(
     mut armed: ResMut<ArmedTool>,
+    mut rotation: ResMut<PendingRotation>,
     buttons: Query<(&Interaction, &ToolButton), Changed<Interaction>>,
 ) {
     for (interaction, tool_button) in &buttons {
         if *interaction == Interaction::Pressed {
             armed.0 = Some(tool_button.0);
+            rotation.0 = 0;
         }
     }
 }
@@ -129,7 +131,7 @@ fn mode_text(mode: Mode) -> &'static str {
             "Mode: Interaction — click a switch to toggle, hold 6 + drag to place a cable (Tab to switch)"
         }
         Mode::Edit => {
-            "Mode: Edit — drag a component/cable body to move it, drag a cable end to reconnect it, click to delete (Tab to switch)"
+            "Mode: Edit — drag a component/cable body to move it, drag a cable end to reconnect it, click to select, R/arrows to rotate selection, Delete/Backspace to remove it (Tab to switch)"
         }
     }
 }
