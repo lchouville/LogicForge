@@ -26,6 +26,7 @@ fn main() {
 // though the resulting settings look equivalent to the defaults there.
 #[cfg(not(target_arch = "wasm32"))]
 fn default_plugins() -> impl PluginGroup {
+    use bevy::image::ImagePlugin;
     use bevy::render::RenderPlugin;
     use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 
@@ -35,16 +36,20 @@ fn default_plugins() -> impl PluginGroup {
         None
     };
 
-    DefaultPlugins.set(RenderPlugin {
-        render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-            backends,
+    DefaultPlugins
+        .set(RenderPlugin {
+            render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
+                backends,
+                ..default()
+            })),
             ..default()
-        })),
-        ..default()
-    })
+        })
+        .set(ImagePlugin::default_nearest())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn default_plugins() -> impl PluginGroup {
-    DefaultPlugins
+    use bevy::image::ImagePlugin;
+
+    DefaultPlugins.set(ImagePlugin::default_nearest())
 }
