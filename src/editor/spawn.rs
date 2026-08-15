@@ -18,6 +18,20 @@ use super::resources::ToolKind;
 // fractional offset.
 const PIN_X_OFFSET: f32 = GRID_CELL_SIZE;
 const PIN_Y_OFFSET: f32 = GRID_CELL_SIZE;
+
+/// Turns a pre-placement facing (0-3 quarter-turns, see `PendingRotation`)
+/// into the root `Transform`'s rotation. Every pin/leg/label offset below is
+/// authored for facing 0 as a plain local `Vec2` on a child of the root, so
+/// rotating just the root here is enough to correctly carry the whole
+/// layout with it through Bevy's normal transform propagation — including,
+/// conveniently, net resolution's `world_to_cell` reads of each pin's
+/// `GlobalTransform`, since every offset here is an exact multiple of
+/// `GRID_CELL_SIZE` and a quarter-turn of an exact grid offset is still an
+/// exact grid offset. Negated so increasing `rotation` turns clockwise on
+/// screen (Bevy's positive Z-rotation is counter-clockwise).
+pub(crate) fn facing_quat(rotation: u8) -> Quat {
+    Quat::from_rotation_z(-(rotation as f32) * std::f32::consts::FRAC_PI_2)
+}
 // A 2-input gate's footprint is 3 nodes wide x 2 nodes tall: the two input
 // rows ARE the two grid nodes (anchor row + one row up), not the anchor row
 // +/- a full row each, which would make the pins' own cells overhang the
@@ -141,6 +155,7 @@ pub fn spawn_and_or_gate(
     asset_server: &AssetServer,
     cell: IVec2,
     kind: GateKind,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -149,7 +164,7 @@ pub fn spawn_and_or_gate(
         .spawn((
             kind,
             GridPosition(cell),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             Visibility::default(),
             children![
                 // 2 blocks tall, centered between the anchor row and the row
@@ -195,6 +210,7 @@ pub fn spawn_not_gate(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -204,7 +220,7 @@ pub fn spawn_not_gate(
             GridPosition(cell),
             placeholder_sprite(COLOR_GATE, 1.0, 1.0),
             PendingAppearance(asset_server.load(gate_appearance_path(GateKind::Not))),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -230,6 +246,7 @@ pub fn spawn_switch(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -239,7 +256,7 @@ pub fn spawn_switch(
             GridPosition(cell),
             placeholder_sprite(COLOR_SWITCH, 1.0, 1.0),
             PendingAppearance(asset_server.load("appearances/switch.json")),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -258,6 +275,7 @@ pub fn spawn_lamp(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
+    rotation: u8,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell);
@@ -267,7 +285,7 @@ pub fn spawn_lamp(
             GridPosition(cell),
             placeholder_sprite(COLOR_LAMP_OFF, 1.0, 1.0),
             PendingAppearance(asset_server.load("appearances/lamp.json")),
-            Transform::from_translation(world.extend(z)),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
             children![
                 pin(
                     asset_server,
@@ -297,20 +315,18 @@ pub fn spawn_placement_preview(
     asset_server: &AssetServer,
     tool: ToolKind,
     cell: IVec2,
+    rotation: u8,
 ) {
     let world = cell_to_world(cell);
     let label_color = Color::WHITE.with_alpha(PREVIEW_ALPHA);
 
-    // Built with `.with_children()` (imperative spawn-per-child) rather
-    // than the `children![...]` macro used by the real `spawn_*` functions
-    // above: with this many children, each further wrapped in an extra
-    // `(PlacementPreviewTint, ...)` marker tuple, `children![...]` was
-    // silently dropping some of them (the output pin, its leg, and the
-    // label all failed to spawn) — `.with_children()` doesn't have
-    // whatever issue that macro expansion ran into.
+    // Built with `.with_children()` (imperative spawn-per-child) rather than
+    // the `children![...]` macro the real `spawn_*` functions above use —
+    // no functional difference, just what this was rewritten to while
+    // chasing an unrelated bug (see `PREVIEW_Z`'s doc comment).
     let mut root = commands.spawn((
         PlacementPreview,
-        Transform::from_translation(world.extend(PREVIEW_Z)),
+        Transform::from_translation(world.extend(PREVIEW_Z)).with_rotation(facing_quat(rotation)),
         Visibility::default(),
     ));
 
