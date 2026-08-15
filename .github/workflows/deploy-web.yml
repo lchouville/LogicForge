@@ -1,0 +1,73 @@
+name: Deploy web build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build wasm and package for Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain (wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry & build
+        uses: Swatinem/rust-cache@v2
+
+      # wasm-bindgen-cli's version must match the `wasm-bindgen` crate
+      # version pinned in Cargo.lock exactly, or it refuses to run against
+      # the binary — read it from the lockfile instead of hardcoding it so
+      # this never silently drifts out of sync.
+      - name: Read wasm-bindgen version from Cargo.lock
+        id: wasm_bindgen_version
+        run: |
+          version=$(grep -A2 '^name = "wasm-bindgen"$' Cargo.lock | grep version | head -1 | cut -d '"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version ${{ steps.wasm_bindgen_version.outputs.version }}
+
+      - name: Build release wasm
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Generate JS bindings
+        run: wasm-bindgen --no-typescript --target web --out-dir web --out-name logicforge target/wasm32-unknown-unknown/release/logicforge.wasm
+
+      - name: Copy assets
+        run: cp -r assets web/assets
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

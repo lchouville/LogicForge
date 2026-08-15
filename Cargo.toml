@@ -7,3 +7,14 @@ edition = "2024"
 bevy = "0.19.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Shrinks the wasm binary drastically (it's ~110MB unstripped, at debug-info
+# levels a browser tab has no business downloading). codegen-units = 1 and
+# thin LTO cost extra build time for a smaller/faster binary; worth it for a
+# release artifact, not applied to dev builds (profile.dev is untouched).
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
