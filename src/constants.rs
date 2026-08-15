@@ -26,7 +26,7 @@ pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
-/// a drag (move) rather than a plain click (delete).
+/// a drag (move) rather than a plain click (select).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
@@ -73,3 +73,16 @@ pub const COLOR_LAMP_OFF: Color = Color::srgb(0.25, 0.2, 0.1);
 pub const COLOR_BUTTON_NORMAL: Color = Color::srgb(0.15, 0.15, 0.18);
 pub const COLOR_BUTTON_ARMED: Color = Color::srgb(0.2, 0.5, 0.25);
 pub const COLOR_BUTTON_BORDER: Color = Color::srgb(0.6, 0.6, 0.65);
+
+/// Outline color for the currently-selected entity in Edit mode (see
+/// `Selected`) — bright magenta, chosen to stand out against every other
+/// color in the palette above (grays, yellow switch, red/blue signal tints).
+pub const COLOR_SELECTION: Color = Color::srgb(1.0, 0.25, 0.85);
+/// Outline color for whatever's under the cursor in Edit mode, before it's
+/// clicked (see `render_hover_highlight`) — a dimmer cyan, distinct from
+/// `COLOR_SELECTION` so a hovered-but-not-selected element never reads as
+/// already selected.
+pub const COLOR_HOVER: Color = Color::srgb(0.35, 0.85, 0.95);
+/// Extra padding (world units) added around a selected component's footprint
+/// so the outline reads as "around" the sprite rather than clipping it.
+pub const SELECTION_OUTLINE_MARGIN: f32 = 6.0;

@@ -131,7 +131,7 @@ fn mode_text(mode: Mode) -> &'static str {
             "Mode: Interaction — click a switch to toggle, hold 6 + drag to place a cable (Tab to switch)"
         }
         Mode::Edit => {
-            "Mode: Edit — drag a component/cable body to move it, drag a cable end to reconnect it, click to delete (Tab to switch)"
+            "Mode: Edit — drag a component/cable body to move it, drag a cable end to reconnect it, click to select, R/arrows to rotate selection, Delete/Backspace to remove it (Tab to switch)"
         }
     }
 }

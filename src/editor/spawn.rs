@@ -38,7 +38,7 @@ pub(crate) fn facing_quat(rotation: u8) -> Quat {
 // body by half a row and inflate the footprint to 3 tall. The body sprite
 // (2 blocks tall) is centered on the midpoint between those two rows, i.e.
 // nudged up by half a cell from the anchor.
-const GATE_BODY_ROW_OFFSET: f32 = GRID_CELL_SIZE / 2.0;
+pub(crate) const GATE_BODY_ROW_OFFSET: f32 = GRID_CELL_SIZE / 2.0;
 
 /// A flat-color placeholder shown at roughly the final footprint while a
 /// body's real pixel-art appearance streams in asynchronously (see
