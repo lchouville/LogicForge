@@ -110,3 +110,22 @@ art redrawn to fit that shape, or does the *reference* imply cables should rende
 as a fixed-size icon regardless of span (i.e. a different rendering model entirely,
 closer to the resistor-icon reference)? Resolve this with the user before redrawing
 `cable_center.json`/`pin.json`/`node.json`.
+
+## 2026-08-15 session #2: resolved — see `notes/claude/2026-08-15.md`
+
+All three open questions above are now resolved (checked against the project's
+Notion docs + a decision from the user on the cable question):
+
+1. Gate footprint: confirmed by Notion ("Bibliothèque de Composants" — a 2-in/1-out
+   gate is a 2×3-node footprint, structure+pins) — matches what the code already
+   does (1×2-block body), no architecture change needed.
+2. Cables: user picked the fixed-size, never-stretched option. Implemented in
+   `src/rendering/cable.rs` — a cable now tiles fixed `CableSegment` copies of
+   `cable_center.json` (one per grid cell spanned) instead of stretching one
+   sprite.
+3. Pins/nodes/cables all get real pixel art (not procedural flat squares) — done;
+   `pin.json`, `cable_center.json`, and the gate/switch/lamp bodies were redrawn.
+
+Not yet done: visual validation in-game by the user (no native-window screenshot
+tool available in the session that did this work). Safe to delete this file once
+that validation happens and nothing here still needs tracking.

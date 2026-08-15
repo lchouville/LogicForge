@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 
 use super::appearance::{Appearance, AppearanceLoader, apply_loaded_appearances};
-use super::cable::sync_cable_sprite;
+use super::background_grid::sync_background_grid;
+use super::cable::{rebuild_cable_segments, sync_cable_sprite};
 use super::sync::{sync_lamp_brightness, sync_pin_colors};
 
 pub struct RenderingPlugin;
@@ -13,6 +14,8 @@ impl Plugin for RenderingPlugin {
             .add_systems(
                 Update,
                 (
+                    rebuild_cable_segments,
+                    sync_background_grid,
                     apply_loaded_appearances,
                     sync_pin_colors,
                     sync_lamp_brightness,
