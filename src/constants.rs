@@ -11,7 +11,18 @@ pub const PIXEL_GRID_DIM: usize = 16;
 /// `GRID_CELL_SIZE`, keeping every pixel-art asset grid-aligned regardless
 /// of its native resolution.
 pub const PIXEL_UNIT: f32 = GRID_CELL_SIZE / PIXEL_GRID_DIM as f32;
-pub const FIXED_TICK_SECONDS: f64 = 0.15;
+/// The simulation's time model: 1 tick = 1ms. Net/wire connectivity has no
+/// propagation delay of its own — a net (see `stage_net_resolution`) is
+/// fully resolved within the tick it's computed in, so a wire "lights up"
+/// instantly. Each *gate* a signal passes through does cost one tick of
+/// latency, though: `stage_net_resolution` (which feeds every gate's
+/// inputs) runs before `stage_gate_evaluation` in the same tick, so a
+/// gate's newly-computed output isn't visible to net resolution until the
+/// *next* tick. At 1ms that's imperceptible to a player even through a long
+/// chain of gates, while still giving the simulation a well-defined,
+/// per-gate notion of propagation delay — relevant later for anything that
+/// cares about ordering or timing (the Horloge/Clock, sequential logic).
+pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
