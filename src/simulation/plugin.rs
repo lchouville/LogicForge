@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use crate::constants::FIXED_TICK_SECONDS;
 
 use super::components::SignalWriteBuffer;
-use super::systems::{apply_signal_writes, stage_gate_evaluation, stage_wire_propagation};
+use super::net_resolution::stage_net_resolution;
+use super::systems::{apply_signal_writes, stage_gate_evaluation};
 
 pub struct SimulationPlugin;
 
@@ -14,7 +15,7 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 FixedUpdate,
                 (
-                    stage_wire_propagation,
+                    stage_net_resolution,
                     apply_signal_writes,
                     stage_gate_evaluation,
                     apply_signal_writes,

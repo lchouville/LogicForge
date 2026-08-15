@@ -1,34 +1,19 @@
 use bevy::prelude::*;
 
-use crate::constants::WIRE_HIT_DISTANCE;
-use crate::simulation::components::{Pin, PinRole, Wire};
+use crate::constants::{CABLE_BODY_HIT_DISTANCE, CABLE_ENDPOINT_HIT_RADIUS};
+use crate::grid::cell_to_world;
+use crate::simulation::components::Cable;
 
-const PIN_HIT_RADIUS: f32 = 10.0;
-
-pub fn is_valid_wire_target(
-    source_role: PinRole,
-    target_role: PinRole,
-    target_already_wired: bool,
-) -> bool {
-    source_role == PinRole::Output && target_role == PinRole::Input && !target_already_wired
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CableEnd {
+    Start,
+    End,
 }
 
-pub fn is_pin_wired(target_pin: Entity, wires: &Query<&Wire>) -> bool {
-    wires.iter().any(|wire| wire.to == target_pin)
-}
-
-pub fn find_pin_at(
-    world_pos: Vec2,
-    pins: &Query<(Entity, &Pin, &GlobalTransform)>,
-) -> Option<(Entity, PinRole)> {
-    pins.iter()
-        .map(|(entity, pin, transform)| {
-            let distance = transform.translation().truncate().distance(world_pos);
-            (entity, pin.role, distance)
-        })
-        .filter(|(_, _, distance)| *distance <= PIN_HIT_RADIUS)
-        .min_by(|(_, _, a), (_, _, b)| a.total_cmp(b))
-        .map(|(entity, role, _)| (entity, role))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CableHit {
+    Endpoint(CableEnd),
+    Body,
 }
 
 /// Shortest distance from `point` to the segment `a`-`b`.
@@ -42,52 +27,44 @@ pub fn distance_to_segment(point: Vec2, a: Vec2, b: Vec2) -> f32 {
     point.distance(a + ab * t)
 }
 
-/// Finds the wire (if any) whose line passes closest to `world_pos`, within
-/// `WIRE_HIT_DISTANCE`, so it can be selected/deleted in Edit mode.
-pub fn find_wire_at(
+/// Finds the cable (if any) closest to `world_pos`, classifying the hit as
+/// one of its two endpoints (within `CABLE_ENDPOINT_HIT_RADIUS`, checked
+/// first so an endpoint near the body still grabs the endpoint) or its body
+/// (within `CABLE_BODY_HIT_DISTANCE`), so Edit mode can tell a whole-cable
+/// move from an endpoint reshape.
+pub fn find_cable_at(
     world_pos: Vec2,
-    wires: &Query<(Entity, &Wire)>,
-    pins: &Query<&GlobalTransform, With<Pin>>,
-) -> Option<Entity> {
-    wires
+    cables: &Query<(Entity, &Cable)>,
+) -> Option<(Entity, CableHit)> {
+    cables
         .iter()
-        .filter_map(|(entity, wire)| {
-            let from = pins.get(wire.from).ok()?.translation().truncate();
-            let to = pins.get(wire.to).ok()?.translation().truncate();
-            let distance = distance_to_segment(world_pos, from, to);
-            (distance <= WIRE_HIT_DISTANCE).then_some((entity, distance))
+        .filter_map(|(entity, cable)| {
+            let start = cell_to_world(cable.start);
+            let end = cell_to_world(cable.end);
+
+            let start_distance = world_pos.distance(start);
+            let end_distance = world_pos.distance(end);
+            if start_distance <= CABLE_ENDPOINT_HIT_RADIUS && start_distance <= end_distance {
+                return Some((entity, CableHit::Endpoint(CableEnd::Start), start_distance));
+            }
+            if end_distance <= CABLE_ENDPOINT_HIT_RADIUS {
+                return Some((entity, CableHit::Endpoint(CableEnd::End), end_distance));
+            }
+
+            let body_distance = distance_to_segment(world_pos, start, end);
+            (body_distance <= CABLE_BODY_HIT_DISTANCE).then_some((
+                entity,
+                CableHit::Body,
+                body_distance,
+            ))
         })
-        .min_by(|(_, a), (_, b)| a.total_cmp(b))
-        .map(|(entity, _)| entity)
+        .min_by(|(_, _, a), (_, _, b)| a.total_cmp(b))
+        .map(|(entity, hit, _)| (entity, hit))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn wire_must_start_at_an_output_pin() {
-        assert!(!is_valid_wire_target(PinRole::Input, PinRole::Input, false));
-    }
-
-    #[test]
-    fn wire_must_end_at_an_input_pin() {
-        assert!(!is_valid_wire_target(
-            PinRole::Output,
-            PinRole::Output,
-            false
-        ));
-    }
-
-    #[test]
-    fn wire_cannot_target_an_already_wired_input() {
-        assert!(!is_valid_wire_target(PinRole::Output, PinRole::Input, true));
-    }
-
-    #[test]
-    fn output_to_free_input_is_valid() {
-        assert!(is_valid_wire_target(PinRole::Output, PinRole::Input, false));
-    }
 
     #[test]
     fn distance_to_segment_is_zero_on_the_line() {

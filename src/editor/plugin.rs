@@ -8,10 +8,12 @@ use super::hud::{
     sync_toolbar_highlight, update_pointer_over_ui,
 };
 use super::interaction::{
-    handle_left_click_end, handle_left_click_start, render_wire_drag_preview,
+    handle_left_click_end, handle_left_click_start, render_cable_drag_preview,
 };
 use super::placement::handle_tool_arming;
-use super::resources::{ArmedTool, EditDragState, InteractionState, Mode};
+use super::resources::{
+    ArmedTool, EditDragState, InteractionState, Mode, PickCycleState, SpawnOrderCounter,
+};
 
 pub struct EditorPlugin;
 
@@ -22,6 +24,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<Mode>()
             .init_resource::<EditDragState>()
             .init_resource::<PointerOverUi>()
+            .init_resource::<PickCycleState>()
+            .init_resource::<SpawnOrderCounter>()
             .add_systems(Startup, (spawn_camera, spawn_mode_label, spawn_toolbar))
             .add_systems(
                 Update,
@@ -34,7 +38,7 @@ impl Plugin for EditorPlugin {
                     ),
                     (
                         handle_left_click_start,
-                        render_wire_drag_preview,
+                        render_cable_drag_preview,
                         handle_left_click_end,
                         handle_edit_click_start,
                         handle_edit_drag,

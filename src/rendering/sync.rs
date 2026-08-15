@@ -5,13 +5,19 @@ use crate::constants::{COLOR_HIGH, COLOR_LAMP_OFF, COLOR_LOW, COLOR_NEUTRAL, LAM
 use crate::simulation::components::{Lamp, Pin, SignalValue};
 use crate::simulation::logic::{LogicState, read_analog, read_logic};
 
+/// The shared signal-state -> tint mapping every plugged-in visual (a
+/// `Pin`, or a cable's endpoint caps and center strand) is colored with.
+pub fn signal_color(state: LogicState) -> Color {
+    match state {
+        LogicState::High => COLOR_HIGH,
+        LogicState::Low => COLOR_LOW,
+        LogicState::Neutral => COLOR_NEUTRAL,
+    }
+}
+
 pub fn sync_pin_colors(mut pins: Query<(&SignalValue, &mut Sprite), With<Pin>>) {
     for (signal, mut sprite) in &mut pins {
-        sprite.color = match read_logic(signal.0) {
-            LogicState::High => COLOR_HIGH,
-            LogicState::Low => COLOR_LOW,
-            LogicState::Neutral => COLOR_NEUTRAL,
-        };
+        sprite.color = signal_color(read_logic(signal.0));
     }
 }
 
