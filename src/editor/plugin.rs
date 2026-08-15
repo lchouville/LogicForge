@@ -11,6 +11,7 @@ use super::interaction::{
     handle_left_click_end, handle_left_click_start, render_cable_drag_preview,
 };
 use super::placement::handle_tool_arming;
+use super::preview::{sync_placement_preview, tint_placement_preview};
 use super::resources::{
     ArmedTool, EditDragState, InteractionState, Mode, PickCycleState, SpawnOrderCounter,
 };
@@ -39,6 +40,7 @@ impl Plugin for EditorPlugin {
                     (
                         handle_left_click_start,
                         render_cable_drag_preview,
+                        sync_placement_preview,
                         handle_left_click_end,
                         handle_edit_click_start,
                         handle_edit_drag,
@@ -47,7 +49,14 @@ impl Plugin for EditorPlugin {
                 )
                     .chain(),
             )
-            .add_systems(Update, (sync_mode_label, sync_toolbar_highlight));
+            .add_systems(
+                Update,
+                (
+                    sync_mode_label,
+                    sync_toolbar_highlight,
+                    tint_placement_preview,
+                ),
+            );
     }
 }
 

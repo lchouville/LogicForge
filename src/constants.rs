@@ -48,6 +48,19 @@ pub const BACKGROUND_GRID_Z: f32 = -200.0;
 /// backdrop (graph-paper/PCB reference grid) rather than compete visually
 /// with placed components.
 pub const BACKGROUND_GRID_ALPHA: f32 = 0.35;
+/// Fixed z for the armed-tool placement-preview ghost — above everything
+/// else (placed components, cables, the background grid) so it's always
+/// clearly visible regardless of what's already on the cell underneath.
+/// `SPAWN_Z_STEP`-incrementing real components stay well under 100 even for
+/// a very large circuit, so this has a huge margin below it; deliberately
+/// NOT pushed any higher than that, because Bevy's default 2D camera clips
+/// at z=1000 — a previous value of 1000.0 here put pin/label children (at a
+/// small *positive* local z on top of the ghost's own root z) just past
+/// that far plane, silently culling them despite spawning correctly.
+pub const PREVIEW_Z: f32 = 500.0;
+/// Opacity of the placement-preview ghost: dim enough to read unmistakably
+/// as "not placed yet" next to a real, fully-opaque component.
+pub const PREVIEW_ALPHA: f32 = 0.45;
 
 pub const COLOR_HIGH: Color = Color::srgb(1.0, 0.35, 0.15);
 pub const COLOR_LOW: Color = Color::srgb(0.2, 0.45, 1.0);
