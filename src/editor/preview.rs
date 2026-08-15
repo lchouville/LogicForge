@@ -5,8 +5,8 @@ use crate::grid::{cell_to_world, world_to_cell};
 
 use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
-use super::resources::{ArmedTool, ToolKind};
-use super::spawn::spawn_placement_preview;
+use super::resources::{ArmedTool, PendingRotation, ToolKind};
+use super::spawn::{facing_quat, spawn_placement_preview};
 
 /// The root of a placement-preview ghost (one entity, holding the whole
 /// thing's `Transform`; despawning it takes its visual children with it).
@@ -22,17 +22,19 @@ pub(crate) struct PlacementPreviewTint;
 
 /// Shows a dimmed ghost of whatever's armed (see `ArmedTool`) at the
 /// cursor's snapped cell, so the player can see what they're about to place
-/// and where before clicking. Cable is excluded — it already gets its own
-/// live preview while dragging (`render_cable_drag_preview`), and doesn't
-/// have a single fixed "footprint" to ghost before that drag starts.
-/// Respawns the ghost (cheap — a handful of sprites) whenever the armed
-/// tool changes, since that's the only time its shape needs to change;
-/// every other frame it just repositions the existing one.
+/// and where — and in what orientation, see `PendingRotation` — before
+/// clicking. Cable is excluded — it already gets its own live preview while
+/// dragging (`render_cable_drag_preview`), and doesn't have a single fixed
+/// footprint to ghost before that drag starts. Respawns the ghost (cheap —
+/// a handful of sprites) whenever the armed tool changes, since that's the
+/// only time its *shape* needs to change; every other frame it just
+/// repositions/reorients the existing one.
 #[allow(clippy::too_many_arguments)]
 pub fn sync_placement_preview(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     armed: Res<ArmedTool>,
+    rotation: Res<PendingRotation>,
     pointer_over_ui: Res<PointerOverUi>,
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
@@ -55,7 +57,13 @@ pub fn sync_placement_preview(
         *last_tool = wanted_tool;
 
         if let (Some(tool), Some(world_pos)) = (wanted_tool, cursor_world) {
-            spawn_placement_preview(&mut commands, &asset_server, tool, world_to_cell(world_pos));
+            spawn_placement_preview(
+                &mut commands,
+                &asset_server,
+                tool,
+                world_to_cell(world_pos),
+                rotation.0,
+            );
         }
         return;
     }
@@ -67,6 +75,7 @@ pub fn sync_placement_preview(
     for (_, mut transform) in &mut existing {
         let z = transform.translation.z;
         transform.translation = cell_to_world(cell).extend(z);
+        transform.rotation = facing_quat(rotation.0);
     }
 }
 
