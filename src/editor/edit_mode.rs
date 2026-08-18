@@ -7,17 +7,19 @@ use crate::constants::{
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{Cable, GateKind, GridPosition};
 
-use super::cursor::cursor_world_position;
-use super::hud::PointerOverUi;
+use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
 use super::placement::pick_entity_at_cell;
+use super::pointer::PointerState;
 use super::resources::{
     ArmedTool, EditDragState, InteractionState, Mode, PickCycleState, Selected,
 };
 use super::spawn::{GATE_BODY_ROW_OFFSET, facing_quat};
 use super::wiring::{CableEnd, CableHit, find_cable_at};
 
+#[allow(clippy::too_many_arguments)]
 pub fn toggle_mode(
     keys: Res<ButtonInput<KeyCode>>,
+    mode_button: Query<&Interaction, (Changed<Interaction>, With<ModeToggleButton>)>,
     mut mode: ResMut<Mode>,
     mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
@@ -25,7 +27,8 @@ pub fn toggle_mode(
     mut cycle: ResMut<PickCycleState>,
     mut selected: ResMut<Selected>,
 ) {
-    if !keys.just_pressed(KeyCode::Tab) {
+    let button_pressed = mode_button.iter().any(|i| *i == Interaction::Pressed);
+    if !keys.just_pressed(KeyCode::Tab) && !button_pressed {
         return;
     }
     *mode = match *mode {
@@ -44,24 +47,17 @@ pub fn handle_edit_click_start(
     mode: Res<Mode>,
     armed: Res<ArmedTool>,
     pointer_over_ui: Res<PointerOverUi>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
     mut drag: ResMut<EditDragState>,
     mut cycle: ResMut<PickCycleState>,
     mut selected: ResMut<Selected>,
     positions: Query<(Entity, &GridPosition)>,
     cables: Query<(Entity, &Cable)>,
 ) {
-    if *mode != Mode::Edit
-        || armed.0.is_some()
-        || pointer_over_ui.0
-        || !buttons.just_pressed(MouseButton::Left)
-    {
+    if *mode != Mode::Edit || armed.0.is_some() || pointer_over_ui.0 || !pointer.just_pressed {
         return;
     }
-    let (camera, camera_transform) = *camera_query;
-    let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(world_pos) = pointer.world_pos else {
         return;
     };
 
@@ -113,18 +109,15 @@ pub fn handle_edit_click_start(
 
 pub fn handle_edit_drag(
     mode: Res<Mode>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
     mut drag: ResMut<EditDragState>,
     mut positioned: Query<(&mut GridPosition, &mut Transform)>,
     mut cables: Query<&mut Cable>,
 ) {
-    if *mode != Mode::Edit || !buttons.pressed(MouseButton::Left) {
+    if *mode != Mode::Edit || !pointer.pressed {
         return;
     }
-    let (camera, camera_transform) = *camera_query;
-    let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(world_pos) = pointer.world_pos else {
         return;
     };
 
@@ -219,10 +212,10 @@ pub fn handle_edit_drag(
 /// `handle_edit_drag` — this just resets the drag state back to idle.
 pub fn handle_edit_click_end(
     mode: Res<Mode>,
-    buttons: Res<ButtonInput<MouseButton>>,
+    pointer: Res<PointerState>,
     mut drag: ResMut<EditDragState>,
 ) {
-    if *mode != Mode::Edit || !buttons.just_released(MouseButton::Left) {
+    if *mode != Mode::Edit || !pointer.just_released {
         return;
     }
     *drag = EditDragState::Idle;
@@ -235,11 +228,15 @@ pub fn handle_edit_click_end(
 pub fn handle_delete_selected(
     mode: Res<Mode>,
     keys: Res<ButtonInput<KeyCode>>,
+    delete_button: Query<&Interaction, (Changed<Interaction>, With<DeleteButton>)>,
     mut commands: Commands,
     mut selected: ResMut<Selected>,
 ) {
+    let button_pressed = delete_button.iter().any(|i| *i == Interaction::Pressed);
     if *mode != Mode::Edit
-        || !(keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace))
+        || !(keys.just_pressed(KeyCode::Delete)
+            || keys.just_pressed(KeyCode::Backspace)
+            || button_pressed)
     {
         return;
     }
@@ -266,8 +263,8 @@ pub fn handle_selected_rotation(
     armed: Res<ArmedTool>,
     keys: Res<ButtonInput<KeyCode>>,
     selected: Res<Selected>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
+    rotate_button: Query<&Interaction, (Changed<Interaction>, With<RotateButton>)>,
     mut drag: ResMut<EditDragState>,
     mut positioned: Query<&mut Transform, With<GridPosition>>,
     mut cables: Query<&mut Cable>,
@@ -278,7 +275,11 @@ pub fn handle_selected_rotation(
     let Some(entity) = selected.0 else {
         return;
     };
-    let delta = if keys.just_pressed(KeyCode::KeyR) || keys.just_pressed(KeyCode::ArrowRight) {
+    let button_pressed = rotate_button.iter().any(|i| *i == Interaction::Pressed);
+    let delta = if keys.just_pressed(KeyCode::KeyR)
+        || keys.just_pressed(KeyCode::ArrowRight)
+        || button_pressed
+    {
         1
     } else if keys.just_pressed(KeyCode::ArrowLeft) {
         -1
@@ -319,17 +320,15 @@ pub fn handle_selected_rotation(
             ..
         } = *drag
             && dragged_entity == entity
+            && let Some(world_pos) = pointer.world_pos
         {
-            let (camera, camera_transform) = *camera_query;
-            if let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) {
-                *drag = EditDragState::CableBody {
-                    entity,
-                    start_cursor: world_pos,
-                    orig_start: new_start,
-                    orig_end: new_end,
-                    dragged,
-                };
-            }
+            *drag = EditDragState::CableBody {
+                entity,
+                start_cursor: world_pos,
+                orig_start: new_start,
+                orig_end: new_end,
+                dragged,
+            };
         }
     }
 }
@@ -444,8 +443,7 @@ pub fn render_hover_highlight(
     pointer_over_ui: Res<PointerOverUi>,
     drag: Res<EditDragState>,
     selected: Res<Selected>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
     grid_positions: Query<(Entity, &GridPosition)>,
     positioned: Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
     cables: Query<(Entity, &Cable)>,
@@ -458,8 +456,7 @@ pub fn render_hover_highlight(
     {
         return;
     }
-    let (camera, camera_transform) = *camera_query;
-    let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(world_pos) = pointer.world_pos else {
         return;
     };
     let cell = world_to_cell(world_pos);

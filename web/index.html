@@ -2,6 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
     <title>LogicForge</title>
     <style>
       html,
@@ -16,6 +20,11 @@
         display: block;
         width: 100vw;
         height: 100vh;
+        /* Without this, the browser treats touch gestures on the canvas as
+           scroll/pinch-zoom/double-tap-zoom instead of passing them to the
+           app — breaks tap/drag even once the app's own touch handling is
+           correct. */
+        touch-action: none;
       }
     </style>
   </head>

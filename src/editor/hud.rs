@@ -13,6 +13,23 @@ pub struct ModeLabel;
 #[derive(Component, Clone, Copy)]
 pub struct ToolButton(pub ToolKind);
 
+/// Touch/click equivalent of the `Tab` key — mirrors `toggle_mode`. Minimal
+/// placeholder styling for now; the mobile UI rework item owns the real
+/// layout/design pass.
+#[derive(Component)]
+pub struct ModeToggleButton;
+
+/// Touch/click equivalent of `R`/the right arrow — mirrors
+/// `handle_selected_rotation`'s clockwise step. No counter-clockwise button:
+/// three clockwise presses reach the same state.
+#[derive(Component)]
+pub struct RotateButton;
+
+/// Touch/click equivalent of `Delete`/`Backspace` — mirrors
+/// `handle_delete_selected`.
+#[derive(Component)]
+pub struct DeleteButton;
+
 /// True while the cursor is over any UI element (toolbar button, etc.) this
 /// frame, so world-click handlers (place/toggle/wire/edit) know to skip and
 /// let the UI's own click handling own the interaction instead.
@@ -49,14 +66,18 @@ pub fn spawn_toolbar(mut commands: Commands) {
             tool_button(ToolKind::Switch, "4: Switch"),
             tool_button(ToolKind::Lamp, "5: Lamp"),
             tool_button(ToolKind::Cable, "6: Cable"),
+            (Button, ModeToggleButton, hud_button("Mode")),
+            (Button, RotateButton, hud_button("Rotate")),
+            (Button, DeleteButton, hud_button("Delete")),
         ],
     ));
 }
 
-fn tool_button(tool: ToolKind, label: &str) -> impl Bundle {
+/// Shared visual bundle for every HUD button (tool or action) — a plain
+/// bordered box with a centered label, no `Button`/marker component of its
+/// own so callers can attach whichever ones they need.
+fn hud_button(label: &str) -> impl Bundle {
     (
-        Button,
-        ToolButton(tool),
         Node {
             width: Val::Px(84.0),
             height: Val::Px(36.0),
@@ -76,6 +97,10 @@ fn tool_button(tool: ToolKind, label: &str) -> impl Bundle {
             TextColor(Color::WHITE),
         )],
     )
+}
+
+fn tool_button(tool: ToolKind, label: &str) -> impl Bundle {
+    (Button, ToolButton(tool), hud_button(label))
 }
 
 pub fn handle_tool_button_click(
