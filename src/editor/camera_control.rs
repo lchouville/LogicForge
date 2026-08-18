@@ -29,6 +29,18 @@ pub(crate) enum PanSource {
 /// deselect in Edit mode). Same shape as `EditDragState`: `Panning` is
 /// re-anchored every frame rather than storing a fixed start, so the camera
 /// stops the instant the input stops moving instead of extrapolating.
+///
+/// `Panning` stores a *screen* position, not a world one, and deliberately
+/// so: `PointerState::world_pos` for two different frames is computed
+/// against two different camera transforms (this frame's, and whatever was
+/// current when `update_pointer_state` ran last frame — one Bevy tick
+/// behind, since the camera only moves partway through this frame's
+/// `Update`). Diffing two such values pulls in that one-frame lag every
+/// single frame, which doesn't cancel out — it compounds into a
+/// odd/even-frame split that shows up as a visible high-frequency shudder
+/// while dragging. Re-projecting the *stored screen* position through the
+/// *current* transform each frame (see `handle_camera_pan`) keeps both
+/// sides of the subtraction anchored to the same camera state.
 #[derive(Resource, Default, Clone, Copy)]
 pub enum CameraPanState {
     #[default]
@@ -37,7 +49,7 @@ pub enum CameraPanState {
         start_cursor: Vec2,
     },
     Panning {
-        last_world_pos: Vec2,
+        last_screen_pos: Vec2,
         source: PanSource,
     },
 }
@@ -109,8 +121,10 @@ pub fn handle_camera_pan(
     positions: Query<&GridPosition>,
     cables: Query<(Entity, &Cable)>,
     mut pan: ResMut<CameraPanState>,
-    mut camera_transform: Single<&mut Transform, With<Camera2d>>,
+    camera_query: Single<(&Camera, &GlobalTransform, &mut Transform), With<Camera2d>>,
 ) {
+    let (camera, camera_transform, mut transform) = camera_query.into_inner();
+
     if touches.iter().count() >= 2
         && !matches!(
             *pan,
@@ -124,10 +138,10 @@ pub fn handle_camera_pan(
     }
 
     if mouse.just_pressed(MouseButton::Middle)
-        && let Some(world_pos) = pointer.world_pos
+        && let Some(screen_pos) = pointer.screen_pos
     {
         *pan = CameraPanState::Panning {
-            last_world_pos: world_pos,
+            last_screen_pos: screen_pos,
             source: PanSource::Middle,
         };
     } else if pointer.just_pressed
@@ -147,16 +161,17 @@ pub fn handle_camera_pan(
             if !pointer.pressed {
                 *pan = CameraPanState::Idle;
             } else if let Some(world_pos) = pointer.world_pos
+                && let Some(screen_pos) = pointer.screen_pos
                 && start_cursor.distance(world_pos) > EDIT_DRAG_THRESHOLD
             {
                 *pan = CameraPanState::Panning {
-                    last_world_pos: world_pos,
+                    last_screen_pos: screen_pos,
                     source: PanSource::Pointer,
                 };
             }
         }
         CameraPanState::Panning {
-            last_world_pos,
+            last_screen_pos,
             source,
         } => {
             let still_pressed = match source {
@@ -165,10 +180,14 @@ pub fn handle_camera_pan(
             };
             if !still_pressed {
                 *pan = CameraPanState::Idle;
-            } else if let Some(world_pos) = pointer.world_pos {
-                camera_transform.translation -= (world_pos - last_world_pos).extend(0.0);
+            } else if let Some(current_world) = pointer.world_pos
+                && let Some(current_screen) = pointer.screen_pos
+                && let Ok(last_world_reprojected) =
+                    camera.viewport_to_world_2d(camera_transform, last_screen_pos)
+            {
+                transform.translation -= (current_world - last_world_reprojected).extend(0.0);
                 *pan = CameraPanState::Panning {
-                    last_world_pos: world_pos,
+                    last_screen_pos: current_screen,
                     source,
                 };
             }
