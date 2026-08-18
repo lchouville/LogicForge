@@ -86,3 +86,26 @@ pub const COLOR_HOVER: Color = Color::srgb(0.35, 0.85, 0.95);
 /// Extra padding (world units) added around a selected component's footprint
 /// so the outline reads as "around" the sprite rather than clipping it.
 pub const SELECTION_OUTLINE_MARGIN: f32 = 6.0;
+
+/// Smallest allowed `OrthographicProjection::scale` (most zoomed in) — keeps
+/// the wheel/pinch from zooming in until nothing but a giant single sprite is
+/// visible.
+pub const CAMERA_ZOOM_MIN_SCALE: f32 = 0.25;
+/// Largest allowed `OrthographicProjection::scale` (most zoomed out) — keeps
+/// the background grid tile pool (see `sync_background_grid`) from having to
+/// cover an unbounded viewport.
+pub const CAMERA_ZOOM_MAX_SCALE: f32 = 4.0;
+/// Multiplicative zoom step applied per notch of `MouseWheel` scroll (e.g.
+/// `1.0 - CAMERA_WHEEL_ZOOM_SENSITIVITY` per notch scrolled toward the
+/// screen). Exponential rather than additive so the zoom feels consistent at
+/// any current scale.
+pub const CAMERA_WHEEL_ZOOM_SENSITIVITY: f32 = 0.1;
+/// Approximate pixels per scroll "notch", used to normalize
+/// `MouseWheel`/`MouseScrollUnit::Pixel` deltas (trackpads, and the wheel
+/// events this project's own browser test tooling dispatches) down to the
+/// same effective step size as `MouseScrollUnit::Line` deltas (physical
+/// mouse wheels, ~1 unit per notch) before applying
+/// `CAMERA_WHEEL_ZOOM_SENSITIVITY` — without this, a single Pixel-unit
+/// scroll event is ~100x a Line-unit one and instantly slams the zoom into
+/// its clamped bounds.
+pub const CAMERA_WHEEL_PIXELS_PER_LINE: f32 = 100.0;
