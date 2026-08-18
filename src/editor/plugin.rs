@@ -12,6 +12,7 @@ use super::interaction::{
     handle_left_click_end, handle_left_click_start, render_cable_drag_preview,
 };
 use super::placement::{handle_rotation_input, handle_tool_arming};
+use super::pointer::{ActiveTouch, PointerState, update_pointer_state};
 use super::preview::{sync_placement_preview, tint_placement_preview};
 use super::resources::{
     ArmedTool, EditDragState, InteractionState, Mode, PendingRotation, PickCycleState, Selected,
@@ -31,10 +32,13 @@ impl Plugin for EditorPlugin {
             .init_resource::<PickCycleState>()
             .init_resource::<SpawnOrderCounter>()
             .init_resource::<Selected>()
+            .init_resource::<PointerState>()
+            .init_resource::<ActiveTouch>()
             .add_systems(Startup, (spawn_camera, spawn_mode_label, spawn_toolbar))
             .add_systems(
                 Update,
                 (
+                    update_pointer_state,
                     (
                         handle_tool_arming,
                         handle_rotation_input,
@@ -63,7 +67,11 @@ impl Plugin for EditorPlugin {
                     sync_toolbar_highlight,
                     tint_placement_preview,
                     render_selection_highlight,
-                    render_hover_highlight,
+                    // Reads `PointerState`, written by `update_pointer_state`
+                    // in the other `Update` system set above — an explicit
+                    // ordering constraint since the two aren't otherwise
+                    // chained together.
+                    render_hover_highlight.after(update_pointer_state),
                 ),
             );
     }

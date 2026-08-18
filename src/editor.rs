@@ -4,6 +4,7 @@ pub mod hud;
 pub mod interaction;
 pub mod placement;
 pub mod plugin;
+pub mod pointer;
 pub mod preview;
 pub mod resources;
 pub mod spawn;

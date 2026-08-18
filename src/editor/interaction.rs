@@ -4,9 +4,9 @@ use crate::constants::{COLOR_NEUTRAL, SPAWN_Z_STEP};
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{GridPosition, SignalValue, Switch};
 
-use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
 use super::placement::{pick_entity_at_cell, place_tool};
+use super::pointer::PointerState;
 use super::resources::{
     ArmedTool, InteractionState, Mode, PendingRotation, PickCycleState, SpawnOrderCounter, ToolKind,
 };
@@ -14,11 +14,9 @@ use crate::rendering::cable::spawn_cable;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_left_click_start(
-    buttons: Res<ButtonInput<MouseButton>>,
+    pointer: Res<PointerState>,
     mode: Res<Mode>,
     pointer_over_ui: Res<PointerOverUi>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut armed: ResMut<ArmedTool>,
@@ -29,12 +27,11 @@ pub fn handle_left_click_start(
     mut switches: Query<(Entity, &GridPosition, &mut Switch, &Children)>,
     mut signals: Query<&mut SignalValue>,
 ) {
-    if pointer_over_ui.0 || !buttons.just_pressed(MouseButton::Left) {
+    if pointer_over_ui.0 || !pointer.just_pressed {
         return;
     }
 
-    let (camera, camera_transform) = *camera_query;
-    let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(world_pos) = pointer.world_pos else {
         return;
     };
 
@@ -84,30 +81,26 @@ pub fn handle_left_click_start(
 
 pub fn render_cable_drag_preview(
     interaction: Res<InteractionState>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
     mut gizmos: Gizmos,
 ) {
     let InteractionState::PlacingCable { start_cell } = *interaction else {
         return;
     };
-    let (camera, camera_transform) = *camera_query;
-    let Some(cursor_world) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(cursor_world) = pointer.world_pos else {
         return;
     };
     gizmos.line_2d(cell_to_world(start_cell), cursor_world, COLOR_NEUTRAL);
 }
 
 pub fn handle_left_click_end(
-    buttons: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
+    pointer: Res<PointerState>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut armed: ResMut<ArmedTool>,
     mut interaction: ResMut<InteractionState>,
 ) {
-    if !buttons.just_released(MouseButton::Left) {
+    if !pointer.just_released {
         return;
     }
     let InteractionState::PlacingCable { start_cell } = *interaction else {
@@ -116,8 +109,7 @@ pub fn handle_left_click_end(
     *interaction = InteractionState::Idle;
     armed.0 = None;
 
-    let (camera, camera_transform) = *camera_query;
-    let Some(world_pos) = cursor_world_position(&window, camera, camera_transform) else {
+    let Some(world_pos) = pointer.world_pos else {
         return;
     };
     let end_cell = world_to_cell(world_pos);
