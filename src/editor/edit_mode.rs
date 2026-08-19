@@ -7,6 +7,7 @@ use crate::constants::{
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{Cable, GateKind, GridPosition};
 
+use super::camera_control::CameraPanState;
 use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
 use super::placement::pick_entity_at_cell;
 use super::pointer::PointerState;
@@ -444,6 +445,7 @@ pub fn render_hover_highlight(
     drag: Res<EditDragState>,
     selected: Res<Selected>,
     pointer: Res<PointerState>,
+    camera_pan: Res<CameraPanState>,
     grid_positions: Query<(Entity, &GridPosition)>,
     positioned: Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
     cables: Query<(Entity, &Cable)>,
@@ -453,6 +455,7 @@ pub fn render_hover_highlight(
         || armed.0.is_some()
         || pointer_over_ui.0
         || !matches!(*drag, EditDragState::Idle)
+        || camera_pan.is_panning()
     {
         return;
     }

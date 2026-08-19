@@ -1,3 +1,4 @@
+pub mod camera_control;
 pub mod cursor;
 pub mod edit_mode;
 pub mod hud;

@@ -13,6 +13,14 @@ pub struct PointerState {
     pub pressed: bool,
     pub just_released: bool,
     pub world_pos: Option<Vec2>,
+    /// Raw pre-projection screen position (window cursor / touch position).
+    /// World positions computed on different frames aren't directly
+    /// comparable — the camera may have moved between them — so anything
+    /// that accumulates a delta across frames (camera panning) needs to
+    /// re-project a *stored* screen position through the *current* camera
+    /// transform each frame rather than diffing two already-projected
+    /// `world_pos` values from different frames. See `camera_control.rs`.
+    pub screen_pos: Option<Vec2>,
 }
 
 /// The touch id currently driving `PointerState`, remembered across frames so
@@ -41,36 +49,42 @@ pub fn update_pointer_state(
 
     if let Some(id) = active_touch.0 {
         if let Some(touch) = touches.get_pressed(id) {
+            let screen_pos = touch.position();
             *pointer = PointerState {
                 just_pressed: touches.just_pressed(id),
                 pressed: true,
                 just_released: false,
                 world_pos: camera
-                    .viewport_to_world_2d(camera_transform, touch.position())
+                    .viewport_to_world_2d(camera_transform, screen_pos)
                     .ok(),
+                screen_pos: Some(screen_pos),
             };
         } else {
             // Ended or canceled this frame: stop tracking it and report the
             // release once, same as a mouse button-up.
             active_touch.0 = None;
+            let screen_pos = touches.get_released(id).map(|touch| touch.position());
             *pointer = PointerState {
                 just_pressed: false,
                 pressed: false,
                 just_released: true,
-                world_pos: touches.get_released(id).and_then(|touch| {
+                world_pos: screen_pos.and_then(|screen_pos| {
                     camera
-                        .viewport_to_world_2d(camera_transform, touch.position())
+                        .viewport_to_world_2d(camera_transform, screen_pos)
                         .ok()
                 }),
+                screen_pos,
             };
         }
         return;
     }
 
+    let screen_pos = window.cursor_position();
     *pointer = PointerState {
         just_pressed: mouse.just_pressed(MouseButton::Left),
         pressed: mouse.pressed(MouseButton::Left),
         just_released: mouse.just_released(MouseButton::Left),
         world_pos: cursor_world_position(&window, camera, camera_transform),
+        screen_pos,
     };
 }

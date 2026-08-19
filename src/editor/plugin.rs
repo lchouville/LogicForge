@@ -1,5 +1,9 @@
 use bevy::prelude::*;
 
+use super::camera_control::{
+    CameraPanState, PinchState, handle_camera_pan, handle_camera_pinch_zoom,
+    handle_camera_wheel_zoom,
+};
 use super::edit_mode::{
     handle_delete_selected, handle_edit_click_end, handle_edit_click_start, handle_edit_drag,
     handle_selected_rotation, render_hover_highlight, render_selection_highlight, toggle_mode,
@@ -34,6 +38,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<Selected>()
             .init_resource::<PointerState>()
             .init_resource::<ActiveTouch>()
+            .init_resource::<CameraPanState>()
+            .init_resource::<PinchState>()
             .add_systems(Startup, (spawn_camera, spawn_mode_label, spawn_toolbar))
             .add_systems(
                 Update,
@@ -46,6 +52,12 @@ impl Plugin for EditorPlugin {
                         handle_tool_button_click,
                         update_pointer_over_ui,
                     ),
+                    (
+                        handle_camera_pan,
+                        handle_camera_wheel_zoom,
+                        handle_camera_pinch_zoom,
+                    )
+                        .chain(),
                     (
                         handle_left_click_start,
                         render_cable_drag_preview,
@@ -67,11 +79,14 @@ impl Plugin for EditorPlugin {
                     sync_toolbar_highlight,
                     tint_placement_preview,
                     render_selection_highlight,
-                    // Reads `PointerState`, written by `update_pointer_state`
-                    // in the other `Update` system set above — an explicit
-                    // ordering constraint since the two aren't otherwise
-                    // chained together.
-                    render_hover_highlight.after(update_pointer_state),
+                    // Reads `PointerState` and `CameraPanState`, written by
+                    // `update_pointer_state`/`handle_camera_pan` (and its
+                    // chained wheel/pinch zoom) in the other `Update` system
+                    // set above — explicit ordering since the two sets
+                    // aren't otherwise chained together.
+                    render_hover_highlight
+                        .after(update_pointer_state)
+                        .after(handle_camera_pinch_zoom),
                 ),
             );
     }
