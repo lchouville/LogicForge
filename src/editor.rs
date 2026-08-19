@@ -2,6 +2,7 @@ pub mod camera_control;
 pub mod cursor;
 pub mod edit_mode;
 pub mod hud;
+pub mod inspector;
 pub mod interaction;
 pub mod placement;
 pub mod plugin;

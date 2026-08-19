@@ -12,6 +12,7 @@ use super::hud::{
     PointerOverUi, handle_tool_button_click, spawn_mode_label, spawn_toolbar, sync_mode_label,
     sync_toolbar_highlight, update_pointer_over_ui,
 };
+use super::inspector::{spawn_inspector_panel, sync_inspector_panel};
 use super::interaction::{
     handle_left_click_end, handle_left_click_start, render_cable_drag_preview,
 };
@@ -40,7 +41,15 @@ impl Plugin for EditorPlugin {
             .init_resource::<ActiveTouch>()
             .init_resource::<CameraPanState>()
             .init_resource::<PinchState>()
-            .add_systems(Startup, (spawn_camera, spawn_mode_label, spawn_toolbar))
+            .add_systems(
+                Startup,
+                (
+                    spawn_camera,
+                    spawn_mode_label,
+                    spawn_toolbar,
+                    spawn_inspector_panel,
+                ),
+            )
             .add_systems(
                 Update,
                 (
@@ -77,6 +86,7 @@ impl Plugin for EditorPlugin {
                 (
                     sync_mode_label,
                     sync_toolbar_highlight,
+                    sync_inspector_panel,
                     tint_placement_preview,
                     render_selection_highlight,
                     // Reads `PointerState` and `CameraPanState`, written by

@@ -25,6 +25,12 @@ pub const PIXEL_UNIT: f32 = GRID_CELL_SIZE / PIXEL_GRID_DIM as f32;
 pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
+/// UI text font, vendored under `assets/fonts/` (see `FiraMono-LICENSE`,
+/// SIL OFL) — Bevy's built-in default font is an ASCII-only subset (~19KB vs
+/// this file's ~170KB) that renders accented characters as missing-glyph
+/// boxes, which broke the French inspector-panel text (see item 4 of the
+/// roadmap).
+pub const UI_FONT_PATH: &str = "fonts/FiraMono-Medium.ttf";
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
 /// a drag (move) rather than a plain click (select).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
