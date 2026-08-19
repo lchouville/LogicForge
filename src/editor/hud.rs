@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::constants::{
-    COLOR_BUTTON_ARMED, COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, LABEL_FONT_SIZE,
+    COLOR_BUTTON_ARMED, COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, LABEL_FONT_SIZE, UI_FONT_PATH,
 };
 use crate::simulation::components::GateKind;
 
@@ -36,10 +36,15 @@ pub struct DeleteButton;
 #[derive(Resource, Default)]
 pub struct PointerOverUi(pub bool);
 
-pub fn spawn_mode_label(mut commands: Commands) {
+pub fn spawn_mode_label(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         ModeLabel,
         Text::new(mode_text(Mode::Interaction)),
+        TextFont {
+            font: asset_server.load(UI_FONT_PATH).into(),
+            font_size: LABEL_FONT_SIZE.into(),
+            ..default()
+        },
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(10.0),
@@ -49,7 +54,8 @@ pub fn spawn_mode_label(mut commands: Commands) {
     ));
 }
 
-pub fn spawn_toolbar(mut commands: Commands) {
+pub fn spawn_toolbar(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load(UI_FONT_PATH);
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -60,15 +66,15 @@ pub fn spawn_toolbar(mut commands: Commands) {
             ..default()
         },
         children![
-            tool_button(ToolKind::Gate(GateKind::And), "1: AND"),
-            tool_button(ToolKind::Gate(GateKind::Or), "2: OR"),
-            tool_button(ToolKind::Gate(GateKind::Not), "3: NOT"),
-            tool_button(ToolKind::Switch, "4: Switch"),
-            tool_button(ToolKind::Lamp, "5: Lamp"),
-            tool_button(ToolKind::Cable, "6: Cable"),
-            (Button, ModeToggleButton, hud_button("Mode")),
-            (Button, RotateButton, hud_button("Rotate")),
-            (Button, DeleteButton, hud_button("Delete")),
+            tool_button(ToolKind::Gate(GateKind::And), "1: AND", font.clone()),
+            tool_button(ToolKind::Gate(GateKind::Or), "2: OR", font.clone()),
+            tool_button(ToolKind::Gate(GateKind::Not), "3: NOT", font.clone()),
+            tool_button(ToolKind::Switch, "4: Switch", font.clone()),
+            tool_button(ToolKind::Lamp, "5: Lamp", font.clone()),
+            tool_button(ToolKind::Cable, "6: Cable", font.clone()),
+            (Button, ModeToggleButton, hud_button("Mode", font.clone())),
+            (Button, RotateButton, hud_button("Rotate", font.clone())),
+            (Button, DeleteButton, hud_button("Delete", font)),
         ],
     ));
 }
@@ -76,7 +82,7 @@ pub fn spawn_toolbar(mut commands: Commands) {
 /// Shared visual bundle for every HUD button (tool or action) — a plain
 /// bordered box with a centered label, no `Button`/marker component of its
 /// own so callers can attach whichever ones they need.
-fn hud_button(label: &str) -> impl Bundle {
+fn hud_button(label: &str, font: Handle<Font>) -> impl Bundle {
     (
         Node {
             width: Val::Px(84.0),
@@ -91,6 +97,7 @@ fn hud_button(label: &str) -> impl Bundle {
         children![(
             Text::new(label),
             TextFont {
+                font: font.into(),
                 font_size: LABEL_FONT_SIZE.into(),
                 ..default()
             },
@@ -99,8 +106,8 @@ fn hud_button(label: &str) -> impl Bundle {
     )
 }
 
-fn tool_button(tool: ToolKind, label: &str) -> impl Bundle {
-    (Button, ToolButton(tool), hud_button(label))
+fn tool_button(tool: ToolKind, label: &str, font: Handle<Font>) -> impl Bundle {
+    (Button, ToolButton(tool), hud_button(label, font))
 }
 
 pub fn handle_tool_button_click(
