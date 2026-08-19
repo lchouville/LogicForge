@@ -1,4 +1,5 @@
 use bevy::color::Color;
+use bevy::math::Vec2;
 
 pub const GRID_CELL_SIZE: f32 = 48.0;
 /// Side length, in texels, of one pixel-art "block" — the unit every
@@ -34,6 +35,18 @@ pub const UI_FONT_PATH: &str = "fonts/FiraMono-Medium.ttf";
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
 /// a drag (move) rather than a plain click (select).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
+/// Width of the project sidebar's list body when expanded (see
+/// `editor::sidebar`) — the always-visible header/toggle row sizes itself to
+/// its own content instead, so it stays reachable while the body is
+/// collapsed.
+pub const SIDEBAR_WIDTH: f32 = 200.0;
+/// World-space translation applied to every chip structure block (see
+/// `editor::chip_structure`) so a project's exterior structure lives far
+/// away from its interior circuit in the same ECS world, rather than needing
+/// to despawn/respawn either one when toggling between the two views — large
+/// enough that it's never visible at once with the interior circuit even
+/// fully zoomed out (`CAMERA_ZOOM_MAX_SCALE`).
+pub const STRUCTURE_SPACE_OFFSET: Vec2 = Vec2::new(100_000.0, 0.0);
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
 pub const CABLE_BODY_HIT_DISTANCE: f32 = 6.0;
@@ -75,6 +88,23 @@ pub const COLOR_NEUTRAL: Color = Color::srgb(0.4, 0.4, 0.45);
 pub const COLOR_SWITCH: Color = Color::srgb(0.75, 0.75, 0.2);
 pub const COLOR_GATE: Color = Color::srgb(0.3, 0.3, 0.35);
 pub const COLOR_LAMP_OFF: Color = Color::srgb(0.25, 0.2, 0.1);
+
+/// Fixed color for a Lampe block in the chip structure editor (see
+/// `editor::chip_structure`) — not tinted by `ActiveStructureColor`, since
+/// that palette only customizes the Corps (body) blocks. A Pin block has no
+/// color of its own to fix here: it reuses the interior circuit's own
+/// `pin.json` appearance instead (see `chip_structure::spawn_structure_block`).
+pub const COLOR_STRUCTURE_LAMP: Color = Color::srgb(0.95, 0.85, 0.3);
+/// Fixed choices offered for the chip structure's Corps (body) color — see
+/// `editor::chip_structure::ActiveStructureColor`.
+pub const STRUCTURE_COLOR_PALETTE: [Color; 6] = [
+    Color::srgb(0.6, 0.6, 0.65),
+    Color::srgb(0.8, 0.25, 0.25),
+    Color::srgb(0.25, 0.55, 0.8),
+    Color::srgb(0.3, 0.7, 0.35),
+    Color::srgb(0.85, 0.6, 0.2),
+    Color::srgb(0.55, 0.35, 0.75),
+];
 
 pub const COLOR_BUTTON_NORMAL: Color = Color::srgb(0.15, 0.15, 0.18);
 pub const COLOR_BUTTON_ARMED: Color = Color::srgb(0.2, 0.5, 0.25);
