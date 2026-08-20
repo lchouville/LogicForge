@@ -114,18 +114,35 @@ pub(crate) struct StructureLabelText;
 /// Shown in the name field in place of an empty `ActiveStructureLabel`.
 const STRUCTURE_LABEL_PLACEHOLDER: &str = "Nom de la puce";
 
+/// A Pin block's own label — future link key between this external pin and
+/// a precise point in the interior circuit (not wired up yet, this is just
+/// the data + editing UI). Only ever attached to `StructureBlockKind::Pin`
+/// entities; empty means "not labeled yet".
+#[derive(Component, Clone, Default)]
+pub struct StructurePinLabel(pub String);
+
+/// Whether the floating per-pin label panel (`StructurePinLabelPanel`) is
+/// currently capturing keystrokes — mirrors `StructureLabelFocus`, kept
+/// separate since the two fields (chip name vs. a specific pin's label)
+/// can never be focused at the same time but are otherwise independent.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StructurePinLabelFocus(pub bool);
+
 /// Spawns one 1x1 structure block. `Pin` reuses the exact same visual as an
 /// interior pin (`spawn::pin`'s `pin.json` appearance, same
 /// `COLOR_NEUTRAL` placeholder while it loads) rather than a flat placeholder
 /// square, so it reads as the same "connection point" the player already
 /// recognizes from the interior circuit editor. `Body`/`Lamp` have no
 /// equivalent art yet, so they stay flat-colored.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_structure_block(
     commands: &mut Commands,
     asset_server: &AssetServer,
     cell: IVec2,
     kind: StructureBlockKind,
     body_color: Color,
+    initial_label: &str,
+    initial_description: &str,
     z: f32,
 ) -> Entity {
     let world = cell_to_world(cell) + STRUCTURE_SPACE_OFFSET;
@@ -145,6 +162,8 @@ pub fn spawn_structure_block(
             entity.insert((
                 placeholder_sprite(COLOR_NEUTRAL, 1.0, 1.0),
                 PendingAppearance(asset_server.load("appearances/pin.json")),
+                StructurePinLabel(initial_label.to_string()),
+                StructurePinDescription(initial_description.to_string()),
             ));
         }
         StructureBlockKind::Lamp => {
@@ -195,7 +214,7 @@ pub fn handle_structure_click(
         if existing.is_none() {
             let z = spawn_order.0;
             spawn_order.0 += SPAWN_Z_STEP;
-            spawn_structure_block(&mut commands, &asset_server, cell, kind, color.0, z);
+            spawn_structure_block(&mut commands, &asset_server, cell, kind, color.0, "", "", z);
         }
         return;
     }
@@ -626,6 +645,176 @@ pub fn sync_structure_name_label(
     *visibility = Visibility::Visible;
 }
 
+/// The selected Pin's detail panel — same principle (and position/style) as
+/// `inspector::InspectorPanel` for the interior circuit: fixed bottom-right,
+/// shown while a Pin is selected. A separate panel rather than reusing
+/// `InspectorPanel` itself, since that one only ever shows plain read-only
+/// `Text` while this one needs editable fields — but `spawn_structure_pin_label_panel`
+/// mirrors `spawn_inspector_panel`'s exact `Node` styling. **One persistent
+/// entity**, spawned once at `Startup`, like `StructureNameLabel`: no
+/// lifecycle tied to `StructureCell`, so no despawn/respawn risk — just
+/// shown/hidden in place.
+#[derive(Component)]
+pub(crate) struct StructurePinLabelPanel;
+
+/// The clickable label field — clicking it toggles `StructurePinLabelFocus`.
+#[derive(Component)]
+pub(crate) struct StructurePinLabelField;
+
+/// The `Text` child of `StructurePinLabelField` kept in sync with the
+/// selected Pin's `StructurePinLabel` by `sync_structure_pin_label_field_text`.
+#[derive(Component)]
+pub(crate) struct StructurePinLabelFieldText;
+
+/// Container for the dynamically rebuilt list of existing-label suggestion
+/// buttons — see `sync_structure_pin_label_suggestions`.
+#[derive(Component)]
+pub(crate) struct StructurePinLabelSuggestions;
+
+/// One suggestion button, carrying the label it applies when clicked.
+#[derive(Component, Clone)]
+pub(crate) struct StructurePinLabelSuggestionButton(pub String);
+
+/// A Pin block's description — free text explaining what the pin is for.
+/// Same role/pattern as `StructurePinLabel`, no suggestion list (a
+/// description is prose, not an identifier meant to be reused verbatim
+/// across pins).
+#[derive(Component, Clone, Default)]
+pub struct StructurePinDescription(pub String);
+
+/// Whether the description field is currently capturing keystrokes — mirrors
+/// `StructurePinLabelFocus`.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StructurePinDescriptionFocus(pub bool);
+
+#[derive(Component)]
+pub(crate) struct StructurePinDescriptionField;
+
+#[derive(Component)]
+pub(crate) struct StructurePinDescriptionFieldText;
+
+const STRUCTURE_PIN_LABEL_PLACEHOLDER: &str = "Label du pin";
+const STRUCTURE_PIN_DESCRIPTION_PLACEHOLDER: &str = "À quoi sert ce pin ?";
+
+fn structure_pin_panel_caption(font: Handle<Font>, text: &str) -> impl Bundle {
+    (
+        Text::new(text),
+        TextFont {
+            font: font.into(),
+            font_size: LABEL_FONT_SIZE.into(),
+            ..default()
+        },
+        TextColor(Color::WHITE),
+    )
+}
+
+/// Same `Node`/color styling as `inspector::spawn_inspector_panel` — bottom
+/// right, fixed, so the Pin detail panel reads as the same UI language as
+/// the interior circuit's own selection panel.
+pub fn spawn_structure_pin_label_panel(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load(UI_FONT_PATH);
+    commands
+        .spawn((
+            StructurePinLabelPanel,
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(10.0),
+                right: Val::Px(10.0),
+                width: Val::Px(240.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(COLOR_BUTTON_NORMAL),
+            BorderColor::all(COLOR_BUTTON_BORDER),
+        ))
+        .with_children(|parent| {
+            parent.spawn(structure_pin_panel_caption(font.clone(), "Nom"));
+            parent.spawn((
+                Button,
+                StructurePinLabelField,
+                Node {
+                    height: Val::Px(32.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::horizontal(Val::Px(6.0)),
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(COLOR_BUTTON_NORMAL),
+                BorderColor::all(COLOR_BUTTON_BORDER),
+                children![(
+                    StructurePinLabelFieldText,
+                    Text::new(STRUCTURE_PIN_LABEL_PLACEHOLDER),
+                    TextFont {
+                        font: font.clone().into(),
+                        font_size: LABEL_FONT_SIZE.into(),
+                        ..default()
+                    },
+                    TextColor(COLOR_BUTTON_BORDER),
+                )],
+            ));
+            parent.spawn((
+                StructurePinLabelSuggestions,
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(2.0),
+                    ..default()
+                },
+            ));
+            parent.spawn(structure_pin_panel_caption(font.clone(), "Description"));
+            parent.spawn((
+                Button,
+                StructurePinDescriptionField,
+                Node {
+                    height: Val::Px(48.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect::all(Val::Px(6.0)),
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(COLOR_BUTTON_NORMAL),
+                BorderColor::all(COLOR_BUTTON_BORDER),
+                children![(
+                    StructurePinDescriptionFieldText,
+                    Text::new(STRUCTURE_PIN_DESCRIPTION_PLACEHOLDER),
+                    TextFont {
+                        font: font.into(),
+                        font_size: LABEL_FONT_SIZE.into(),
+                        ..default()
+                    },
+                    TextColor(COLOR_BUTTON_BORDER),
+                )],
+            ));
+        });
+}
+
+/// Shows/hides the Pin detail panel from `SelectedStructureBlock` — same
+/// `mode`/`selected`-change-gated pattern as `inspector::sync_inspector_panel`
+/// (position is fixed now, so unlike the panel's previous floating design
+/// there's no per-frame reprojection needed).
+pub fn sync_structure_pin_label_panel(
+    selected: Res<SelectedStructureBlock>,
+    blocks: Query<&StructureBlockKind>,
+    mut panel: Query<&mut Node, With<StructurePinLabelPanel>>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
+    let Ok(mut node) = panel.single_mut() else {
+        return;
+    };
+    let is_pin = selected
+        .0
+        .and_then(|entity| blocks.get(entity).ok())
+        .is_some_and(|kind| matches!(kind, StructureBlockKind::Pin));
+    node.display = if is_pin { Display::Flex } else { Display::None };
+}
+
 /// Same bundle shape as `hud::hud_button`, kept local since that one isn't
 /// `pub(crate)` — same precedent already established in `sidebar.rs`.
 fn structure_button_frame(font: Handle<Font>, label: &str) -> impl Bundle {
@@ -906,6 +1095,326 @@ pub fn sync_structure_label_field_text(
 pub fn sync_structure_label_field_border(
     focus: Res<StructureLabelFocus>,
     mut field: Query<&mut BorderColor, With<StructureLabelField>>,
+) {
+    if !focus.is_changed() {
+        return;
+    }
+    let Ok(mut border) = field.single_mut() else {
+        return;
+    };
+    *border = BorderColor::all(if focus.0 {
+        COLOR_BUTTON_ARMED
+    } else {
+        COLOR_BUTTON_BORDER
+    });
+}
+
+/// Focuses the floating per-pin label field on click; defocuses on
+/// Entrée/Échap or any other click — same anti-collision-with-Delete
+/// reasoning as `handle_structure_label_field_click`.
+pub fn handle_structure_pin_label_field_click(
+    keys: Res<ButtonInput<KeyCode>>,
+    pointer: Res<PointerState>,
+    pointer_over_ui: Res<PointerOverUi>,
+    mut focus: ResMut<StructurePinLabelFocus>,
+    field: Query<&Interaction, (Changed<Interaction>, With<StructurePinLabelField>)>,
+    other_buttons: Query<&Interaction, (Changed<Interaction>, Without<StructurePinLabelField>)>,
+) {
+    if field.iter().any(|i| *i == Interaction::Pressed) {
+        focus.0 = true;
+        return;
+    }
+    if !focus.0 {
+        return;
+    }
+    let clicked_elsewhere_in_ui = other_buttons.iter().any(|i| *i == Interaction::Pressed);
+    let clicked_canvas = pointer.just_pressed && !pointer_over_ui.0;
+    if clicked_elsewhere_in_ui
+        || clicked_canvas
+        || keys.just_pressed(KeyCode::Enter)
+        || keys.just_pressed(KeyCode::Escape)
+    {
+        focus.0 = false;
+    }
+}
+
+/// Appends typed characters to the *selected* Pin's `StructurePinLabel`
+/// while the floating field is focused — mirrors
+/// `handle_structure_label_typing`, but mutates a per-entity component
+/// instead of a global resource, so it needs to look up the target entity
+/// each event batch. Still drains `KeyboardInput` whenever there's nothing
+/// valid to type into (unfocused, or the selection isn't a Pin anymore —
+/// e.g. it was just deleted), for the same reason `handle_structure_label_typing`
+/// always drains while unfocused.
+pub fn handle_structure_pin_label_typing(
+    focus: Res<StructurePinLabelFocus>,
+    selected: Res<SelectedStructureBlock>,
+    mut keys: MessageReader<KeyboardInput>,
+    mut blocks: Query<(&StructureBlockKind, &mut StructurePinLabel)>,
+) {
+    let target = focus.0.then_some(selected.0).flatten().and_then(|entity| {
+        blocks
+            .get_mut(entity)
+            .ok()
+            .filter(|(kind, _)| matches!(kind, StructureBlockKind::Pin))
+            .map(|(_, label)| label)
+    });
+    let Some(mut label) = target else {
+        keys.clear();
+        return;
+    };
+    for event in keys.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match event.key_code {
+            KeyCode::Backspace => {
+                label.0.pop();
+            }
+            KeyCode::Enter | KeyCode::Escape => {}
+            _ => {
+                if let Some(text) = &event.text {
+                    label.0.push_str(text);
+                }
+            }
+        }
+    }
+}
+
+/// Keeps the floating field's displayed text in sync with the selected
+/// Pin's `StructurePinLabel`, falling back to
+/// `STRUCTURE_PIN_LABEL_PLACEHOLDER` when there's no Pin selected or its
+/// label is empty. Unconditional (no change-detection guard): cheap single
+/// lookup, and the trigger set (selection changed vs. the selected pin's
+/// own label changed) isn't a single resource to gate on cleanly — same
+/// reasoning `sync_pin_colors` (`rendering/sync.rs`) uses for having no
+/// guard at all.
+pub fn sync_structure_pin_label_field_text(
+    selected: Res<SelectedStructureBlock>,
+    blocks: Query<(&StructureBlockKind, &StructurePinLabel)>,
+    mut text: Query<&mut Text, With<StructurePinLabelFieldText>>,
+) {
+    let Ok(mut text) = text.single_mut() else {
+        return;
+    };
+    let label = selected
+        .0
+        .and_then(|entity| blocks.get(entity).ok())
+        .filter(|(kind, _)| matches!(kind, StructureBlockKind::Pin))
+        .map(|(_, label)| label.0.clone());
+    text.0 = match label {
+        Some(label) if !label.is_empty() => label,
+        _ => STRUCTURE_PIN_LABEL_PLACEHOLDER.to_string(),
+    };
+}
+
+/// Highlights the floating field's border while it holds keyboard focus —
+/// same convention as `sync_structure_label_field_border`.
+pub fn sync_structure_pin_label_field_border(
+    focus: Res<StructurePinLabelFocus>,
+    mut field: Query<&mut BorderColor, With<StructurePinLabelField>>,
+) {
+    if !focus.is_changed() {
+        return;
+    }
+    let Ok(mut border) = field.single_mut() else {
+        return;
+    };
+    *border = BorderColor::all(if focus.0 {
+        COLOR_BUTTON_ARMED
+    } else {
+        COLOR_BUTTON_BORDER
+    });
+}
+
+/// Rebuilds the suggestion button list from every distinct, non-empty
+/// `StructurePinLabel` found on Pin blocks *other* than the one currently
+/// selected — cached in `last` and only actually despawned/respawned when
+/// the computed set changes, so typing into the selected pin's own field
+/// (which doesn't affect this set, since it's excluded) never churns the
+/// UI. Despawn-and-respawn rather than incremental diffing, same reasoning
+/// as `sync_structure_pin_legs`: a chip's pin count is always small.
+pub fn sync_structure_pin_label_suggestions(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    selected: Res<SelectedStructureBlock>,
+    blocks: Query<(Entity, &StructureBlockKind, &StructurePinLabel)>,
+    suggestions_root: Query<Entity, With<StructurePinLabelSuggestions>>,
+    existing_buttons: Query<Entity, With<StructurePinLabelSuggestionButton>>,
+    mut last: Local<Vec<String>>,
+) {
+    let mut current: Vec<String> = blocks
+        .iter()
+        .filter(|(entity, kind, label)| {
+            matches!(kind, StructureBlockKind::Pin)
+                && Some(*entity) != selected.0
+                && !label.0.is_empty()
+        })
+        .map(|(_, _, label)| label.0.clone())
+        .collect();
+    current.sort();
+    current.dedup();
+
+    if *last == current {
+        return;
+    }
+    *last = current.clone();
+
+    for entity in &existing_buttons {
+        commands.entity(entity).despawn();
+    }
+    let Ok(root) = suggestions_root.single() else {
+        return;
+    };
+    let font = asset_server.load(UI_FONT_PATH);
+    commands.entity(root).with_children(|parent| {
+        for label in current {
+            parent.spawn((
+                Button,
+                StructurePinLabelSuggestionButton(label.clone()),
+                Node {
+                    width: Val::Px(120.0),
+                    height: Val::Px(24.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::horizontal(Val::Px(6.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(COLOR_BUTTON_NORMAL),
+                BorderColor::all(COLOR_BUTTON_BORDER),
+                children![(
+                    Text::new(label),
+                    TextFont {
+                        font: font.clone().into(),
+                        font_size: LABEL_FONT_SIZE.into(),
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                )],
+            ));
+        }
+    });
+}
+
+/// Clicking a suggestion writes its label directly onto the selected Pin's
+/// `StructurePinLabel`, no typing needed.
+pub fn handle_structure_pin_label_suggestion_click(
+    selected: Res<SelectedStructureBlock>,
+    buttons: Query<(&Interaction, &StructurePinLabelSuggestionButton), Changed<Interaction>>,
+    mut blocks: Query<(&StructureBlockKind, &mut StructurePinLabel)>,
+) {
+    let Some(entity) = selected.0 else {
+        return;
+    };
+    let Some((_, clicked)) = buttons.iter().find(|(i, _)| **i == Interaction::Pressed) else {
+        return;
+    };
+    let Ok((kind, mut label)) = blocks.get_mut(entity) else {
+        return;
+    };
+    if !matches!(kind, StructureBlockKind::Pin) {
+        return;
+    }
+    label.0 = clicked.0.clone();
+}
+
+/// Focuses the description field on click; defocuses on Entrée/Échap or any
+/// other click — same anti-collision-with-Delete reasoning as
+/// `handle_structure_pin_label_field_click`.
+pub fn handle_structure_pin_description_field_click(
+    keys: Res<ButtonInput<KeyCode>>,
+    pointer: Res<PointerState>,
+    pointer_over_ui: Res<PointerOverUi>,
+    mut focus: ResMut<StructurePinDescriptionFocus>,
+    field: Query<&Interaction, (Changed<Interaction>, With<StructurePinDescriptionField>)>,
+    other_buttons: Query<
+        &Interaction,
+        (Changed<Interaction>, Without<StructurePinDescriptionField>),
+    >,
+) {
+    if field.iter().any(|i| *i == Interaction::Pressed) {
+        focus.0 = true;
+        return;
+    }
+    if !focus.0 {
+        return;
+    }
+    let clicked_elsewhere_in_ui = other_buttons.iter().any(|i| *i == Interaction::Pressed);
+    let clicked_canvas = pointer.just_pressed && !pointer_over_ui.0;
+    if clicked_elsewhere_in_ui
+        || clicked_canvas
+        || keys.just_pressed(KeyCode::Enter)
+        || keys.just_pressed(KeyCode::Escape)
+    {
+        focus.0 = false;
+    }
+}
+
+/// Appends typed characters to the selected Pin's `StructurePinDescription`
+/// while the description field is focused — mirrors
+/// `handle_structure_pin_label_typing`.
+pub fn handle_structure_pin_description_typing(
+    focus: Res<StructurePinDescriptionFocus>,
+    selected: Res<SelectedStructureBlock>,
+    mut keys: MessageReader<KeyboardInput>,
+    mut blocks: Query<(&StructureBlockKind, &mut StructurePinDescription)>,
+) {
+    let target = focus.0.then_some(selected.0).flatten().and_then(|entity| {
+        blocks
+            .get_mut(entity)
+            .ok()
+            .filter(|(kind, _)| matches!(kind, StructureBlockKind::Pin))
+            .map(|(_, description)| description)
+    });
+    let Some(mut description) = target else {
+        keys.clear();
+        return;
+    };
+    for event in keys.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match event.key_code {
+            KeyCode::Backspace => {
+                description.0.pop();
+            }
+            KeyCode::Enter | KeyCode::Escape => {}
+            _ => {
+                if let Some(text) = &event.text {
+                    description.0.push_str(text);
+                }
+            }
+        }
+    }
+}
+
+/// Keeps the description field's displayed text in sync with the selected
+/// Pin's `StructurePinDescription` — mirrors
+/// `sync_structure_pin_label_field_text`.
+pub fn sync_structure_pin_description_field_text(
+    selected: Res<SelectedStructureBlock>,
+    blocks: Query<(&StructureBlockKind, &StructurePinDescription)>,
+    mut text: Query<&mut Text, With<StructurePinDescriptionFieldText>>,
+) {
+    let Ok(mut text) = text.single_mut() else {
+        return;
+    };
+    let description = selected
+        .0
+        .and_then(|entity| blocks.get(entity).ok())
+        .filter(|(kind, _)| matches!(kind, StructureBlockKind::Pin))
+        .map(|(_, description)| description.0.clone());
+    text.0 = match description {
+        Some(description) if !description.is_empty() => description,
+        _ => STRUCTURE_PIN_DESCRIPTION_PLACEHOLDER.to_string(),
+    };
+}
+
+/// Highlights the description field's border while it holds keyboard focus.
+pub fn sync_structure_pin_description_field_border(
+    focus: Res<StructurePinDescriptionFocus>,
+    mut field: Query<&mut BorderColor, With<StructurePinDescriptionField>>,
 ) {
     if !focus.is_changed() {
         return;

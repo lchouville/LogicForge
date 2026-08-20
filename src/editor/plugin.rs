@@ -6,14 +6,21 @@ use super::camera_control::{
 };
 use super::chip_structure::{
     ActiveStructureColor, ActiveStructureLabel, ArmedStructureTool, SelectedStructureBlock,
-    StructureDragState, StructureLabelFocus, handle_delete_selected_structure_block,
-    handle_structure_camera_pan, handle_structure_click, handle_structure_click_end,
-    handle_structure_color_button_click, handle_structure_drag, handle_structure_label_field_click,
-    handle_structure_label_typing, handle_structure_tool_button_click,
+    StructureDragState, StructureLabelFocus, StructurePinDescriptionFocus, StructurePinLabelFocus,
+    handle_delete_selected_structure_block, handle_structure_camera_pan, handle_structure_click,
+    handle_structure_click_end, handle_structure_color_button_click, handle_structure_drag,
+    handle_structure_label_field_click, handle_structure_label_typing,
+    handle_structure_pin_description_field_click, handle_structure_pin_description_typing,
+    handle_structure_pin_label_field_click, handle_structure_pin_label_suggestion_click,
+    handle_structure_pin_label_typing, handle_structure_tool_button_click,
     render_structure_hover_highlight, render_structure_selection_highlight,
-    spawn_structure_name_label, spawn_structure_toolbar, sync_structure_color,
-    sync_structure_label_field_border, sync_structure_label_field_text, sync_structure_name_label,
-    sync_structure_pin_legs, sync_structure_toolbar_highlight, sync_structure_toolbar_visibility,
+    spawn_structure_name_label, spawn_structure_pin_label_panel, spawn_structure_toolbar,
+    sync_structure_color, sync_structure_label_field_border, sync_structure_label_field_text,
+    sync_structure_name_label, sync_structure_pin_description_field_border,
+    sync_structure_pin_description_field_text, sync_structure_pin_label_field_border,
+    sync_structure_pin_label_field_text, sync_structure_pin_label_panel,
+    sync_structure_pin_label_suggestions, sync_structure_pin_legs,
+    sync_structure_toolbar_highlight, sync_structure_toolbar_visibility,
 };
 use super::chip_view::{PreChipEditCamera, handle_chip_view_toggle_click};
 use super::edit_mode::{
@@ -68,6 +75,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<PreChipEditCamera>()
             .init_resource::<ActiveStructureLabel>()
             .init_resource::<StructureLabelFocus>()
+            .init_resource::<StructurePinLabelFocus>()
+            .init_resource::<StructurePinDescriptionFocus>()
             .add_systems(
                 Startup,
                 (
@@ -80,6 +89,7 @@ impl Plugin for EditorPlugin {
                     spawn_sidebar,
                     spawn_structure_toolbar,
                     spawn_structure_name_label,
+                    spawn_structure_pin_label_panel,
                 ),
             )
             .add_systems(
@@ -134,6 +144,11 @@ impl Plugin for EditorPlugin {
                         handle_structure_camera_pan,
                         handle_structure_label_field_click,
                         handle_structure_label_typing,
+                        handle_structure_pin_label_field_click,
+                        handle_structure_pin_label_typing,
+                        handle_structure_pin_label_suggestion_click,
+                        handle_structure_pin_description_field_click,
+                        handle_structure_pin_description_typing,
                     )
                         .run_if(resource_equals(ProjectView::ChipEdit)),
                 )
@@ -161,6 +176,14 @@ impl Plugin for EditorPlugin {
                     sync_structure_toolbar_highlight,
                     sync_structure_label_field_text,
                     sync_structure_label_field_border,
+                    (
+                        sync_structure_pin_label_panel,
+                        sync_structure_pin_label_field_text,
+                        sync_structure_pin_label_field_border,
+                        sync_structure_pin_label_suggestions,
+                        sync_structure_pin_description_field_text,
+                        sync_structure_pin_description_field_border,
+                    ),
                     render_structure_selection_highlight,
                     render_structure_hover_highlight,
                     // Deliberately NOT gated by `run_if(ProjectView::ChipEdit)`
