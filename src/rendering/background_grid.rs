@@ -12,34 +12,46 @@ use super::appearance::PendingAppearance;
 pub(crate) struct BackgroundGridTile;
 
 /// Extra cells kept alive past the camera's visible edge so a tile is
-/// already in place rather than popping in right as it scrolls into view
-/// (relevant once panning exists — today the camera never moves).
+/// already in place rather than popping in right as it scrolls into view.
 const MARGIN_CELLS: i32 = 2;
 
 /// Fills the camera's visible area with `BackgroundGridTile`s reusing
 /// `node.json`, growing a pooled set of entities (never despawning, just
 /// hiding) as the window/viewport grows. The expensive part — recomputing
 /// which cells are visible and repositioning the pool — only reruns when
-/// the window actually changes size (or on the very first run); the camera
-/// is static today, so there's nothing else that could invalidate it yet —
-/// a future pan/zoom system will need to add itself to that condition. The
-/// per-tile tint refresh always runs (cheap, same pattern as
+/// the window actually changes size, or the camera pans/zooms (see
+/// `camera_changed` below — `src/editor/camera_control.rs` moves it now).
+/// The per-tile tint refresh always runs (cheap, same pattern as
 /// `sync_pin_colors`) because `apply_loaded_appearances` replaces each
 /// tile's `Sprite` outright — with an opaque default color — the moment its
 /// `node.json` finishes loading asynchronously, which can land on any
 /// frame after the layout was last built.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn sync_background_grid(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     resized_windows: Query<&Window, Changed<Window>>,
+    // `Without<BackgroundGridTile>` isn't just belt-and-suspenders: without
+    // it, Bevy can't statically prove this query's `Transform` read is
+    // disjoint from `tiles`' `&mut Transform` below (nothing else rules out
+    // an entity having both markers), and panics at startup (error B0001)
+    // rather than silently doing the wrong thing.
+    camera_changed: Query<
+        (),
+        (
+            With<Camera2d>,
+            Without<BackgroundGridTile>,
+            Or<(Changed<Transform>, Changed<Projection>)>,
+        ),
+    >,
     mut ran_once: Local<bool>,
     mut pool: Local<Vec<Entity>>,
     mut tiles: Query<(&mut Sprite, &mut Transform, &mut Visibility), With<BackgroundGridTile>>,
 ) {
     let (camera, camera_transform) = *camera_query;
 
-    if !*ran_once || !resized_windows.is_empty() {
+    if !*ran_once || !resized_windows.is_empty() || !camera_changed.is_empty() {
         let bounds = camera.logical_viewport_size().and_then(|viewport_size| {
             let top_left = camera
                 .viewport_to_world_2d(camera_transform, Vec2::ZERO)

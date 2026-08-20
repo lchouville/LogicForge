@@ -42,8 +42,8 @@ pub enum InteractionState {
 /// Backspace removes the current `Selected` entity).
 #[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    #[default]
     Interaction,
+    #[default]
     Edit,
 }
 
@@ -93,3 +93,19 @@ pub struct PickCycleState {
 /// order instead of an unstable one from same-z sprite batching.
 #[derive(Resource, Default)]
 pub struct SpawnOrderCounter(pub f32);
+
+/// Bundles every piece of transient editor-interaction state into one
+/// `SystemParam` — `reset_transient_editor_state`/`project::switch_to_project`
+/// both need write access to all of it at once, and spelling out six separate
+/// `ResMut` parameters on top of everything else a system like
+/// `sidebar::handle_project_selection` already needs pushes it past Bevy's
+/// 16-parameter limit for a plain function system.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct TransientEditorState<'w> {
+    pub armed: ResMut<'w, ArmedTool>,
+    pub interaction: ResMut<'w, InteractionState>,
+    pub drag: ResMut<'w, EditDragState>,
+    pub cycle: ResMut<'w, PickCycleState>,
+    pub selected: ResMut<'w, Selected>,
+    pub spawn_order: ResMut<'w, SpawnOrderCounter>,
+}

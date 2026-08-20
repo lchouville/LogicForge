@@ -7,14 +7,34 @@ use crate::constants::{
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{Cable, GateKind, GridPosition};
 
+use super::camera_control::CameraPanState;
 use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
 use super::placement::pick_entity_at_cell;
 use super::pointer::PointerState;
 use super::resources::{
     ArmedTool, EditDragState, InteractionState, Mode, PickCycleState, Selected,
 };
-use super::spawn::{GATE_BODY_ROW_OFFSET, facing_quat};
+use super::spawn::{GATE_BODY_ROW_OFFSET, facing_quat, rotation_from_transform};
 use super::wiring::{CableEnd, CableHit, find_cable_at};
+
+/// Clears every piece of transient editor state that can reference a live
+/// `Entity`/mid-gesture cell — needed whenever the set of entities on screen
+/// might no longer match what these resources point to: switching
+/// Interaction/Edit mode (below) and switching the active project (see
+/// `project::switch_to_project`) both invalidate them the same way.
+pub fn reset_transient_editor_state(
+    armed: &mut ArmedTool,
+    interaction: &mut InteractionState,
+    drag: &mut EditDragState,
+    cycle: &mut PickCycleState,
+    selected: &mut Selected,
+) {
+    armed.0 = None;
+    *interaction = InteractionState::Idle;
+    *drag = EditDragState::Idle;
+    *cycle = PickCycleState::default();
+    selected.0 = None;
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn toggle_mode(
@@ -35,11 +55,13 @@ pub fn toggle_mode(
         Mode::Interaction => Mode::Edit,
         Mode::Edit => Mode::Interaction,
     };
-    armed.0 = None;
-    *interaction = InteractionState::Idle;
-    *drag = EditDragState::Idle;
-    *cycle = PickCycleState::default();
-    selected.0 = None;
+    reset_transient_editor_state(
+        &mut armed,
+        &mut interaction,
+        &mut drag,
+        &mut cycle,
+        &mut selected,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -288,12 +310,9 @@ pub fn handle_selected_rotation(
     };
 
     if let Ok(mut transform) = positioned.get_mut(entity) {
-        // Inverse of `facing_quat`: recover the current quarter-turn count
-        // from the root's Z rotation, so repeated presses step from
-        // wherever the component was originally placed rather than
-        // resetting to a fixed orientation.
-        let current =
-            (-transform.rotation.to_scaled_axis().z / std::f32::consts::FRAC_PI_2).round() as i32;
+        // Step from wherever the component was originally placed rather
+        // than resetting to a fixed orientation.
+        let current = rotation_from_transform(&transform) as i32;
         let turns = (current + delta).rem_euclid(4) as u8;
         transform.rotation = facing_quat(turns);
         return;
@@ -444,6 +463,7 @@ pub fn render_hover_highlight(
     drag: Res<EditDragState>,
     selected: Res<Selected>,
     pointer: Res<PointerState>,
+    camera_pan: Res<CameraPanState>,
     grid_positions: Query<(Entity, &GridPosition)>,
     positioned: Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
     cables: Query<(Entity, &Cable)>,
@@ -453,6 +473,7 @@ pub fn render_hover_highlight(
         || armed.0.is_some()
         || pointer_over_ui.0
         || !matches!(*drag, EditDragState::Idle)
+        || camera_pan.is_panning()
     {
         return;
     }

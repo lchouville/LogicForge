@@ -1,4 +1,5 @@
 use bevy::color::Color;
+use bevy::math::Vec2;
 
 pub const GRID_CELL_SIZE: f32 = 48.0;
 /// Side length, in texels, of one pixel-art "block" — the unit every
@@ -25,9 +26,27 @@ pub const PIXEL_UNIT: f32 = GRID_CELL_SIZE / PIXEL_GRID_DIM as f32;
 pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
+/// UI text font, vendored under `assets/fonts/` (see `FiraMono-LICENSE`,
+/// SIL OFL) — Bevy's built-in default font is an ASCII-only subset (~19KB vs
+/// this file's ~170KB) that renders accented characters as missing-glyph
+/// boxes, which broke the French inspector-panel text (see item 4 of the
+/// roadmap).
+pub const UI_FONT_PATH: &str = "fonts/FiraMono-Medium.ttf";
 /// Cursor movement (in pixels) past which a held click in Edit mode counts as
 /// a drag (move) rather than a plain click (select).
 pub const EDIT_DRAG_THRESHOLD: f32 = 6.0;
+/// Width of the project sidebar's list body when expanded (see
+/// `editor::sidebar`) — the always-visible header/toggle row sizes itself to
+/// its own content instead, so it stays reachable while the body is
+/// collapsed.
+pub const SIDEBAR_WIDTH: f32 = 200.0;
+/// World-space translation applied to every chip structure block (see
+/// `editor::chip_structure`) so a project's exterior structure lives far
+/// away from its interior circuit in the same ECS world, rather than needing
+/// to despawn/respawn either one when toggling between the two views — large
+/// enough that it's never visible at once with the interior circuit even
+/// fully zoomed out (`CAMERA_ZOOM_MAX_SCALE`).
+pub const STRUCTURE_SPACE_OFFSET: Vec2 = Vec2::new(100_000.0, 0.0);
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
 pub const CABLE_BODY_HIT_DISTANCE: f32 = 6.0;
@@ -70,6 +89,23 @@ pub const COLOR_SWITCH: Color = Color::srgb(0.75, 0.75, 0.2);
 pub const COLOR_GATE: Color = Color::srgb(0.3, 0.3, 0.35);
 pub const COLOR_LAMP_OFF: Color = Color::srgb(0.25, 0.2, 0.1);
 
+/// Fixed color for a Lampe block in the chip structure editor (see
+/// `editor::chip_structure`) — not tinted by `ActiveStructureColor`, since
+/// that palette only customizes the Corps (body) blocks. A Pin block has no
+/// color of its own to fix here: it reuses the interior circuit's own
+/// `pin.json` appearance instead (see `chip_structure::spawn_structure_block`).
+pub const COLOR_STRUCTURE_LAMP: Color = Color::srgb(0.95, 0.85, 0.3);
+/// Fixed choices offered for the chip structure's Corps (body) color — see
+/// `editor::chip_structure::ActiveStructureColor`.
+pub const STRUCTURE_COLOR_PALETTE: [Color; 6] = [
+    Color::srgb(0.6, 0.6, 0.65),
+    Color::srgb(0.8, 0.25, 0.25),
+    Color::srgb(0.25, 0.55, 0.8),
+    Color::srgb(0.3, 0.7, 0.35),
+    Color::srgb(0.85, 0.6, 0.2),
+    Color::srgb(0.55, 0.35, 0.75),
+];
+
 pub const COLOR_BUTTON_NORMAL: Color = Color::srgb(0.15, 0.15, 0.18);
 pub const COLOR_BUTTON_ARMED: Color = Color::srgb(0.2, 0.5, 0.25);
 pub const COLOR_BUTTON_BORDER: Color = Color::srgb(0.6, 0.6, 0.65);
@@ -86,3 +122,26 @@ pub const COLOR_HOVER: Color = Color::srgb(0.35, 0.85, 0.95);
 /// Extra padding (world units) added around a selected component's footprint
 /// so the outline reads as "around" the sprite rather than clipping it.
 pub const SELECTION_OUTLINE_MARGIN: f32 = 6.0;
+
+/// Smallest allowed `OrthographicProjection::scale` (most zoomed in) — keeps
+/// the wheel/pinch from zooming in until nothing but a giant single sprite is
+/// visible.
+pub const CAMERA_ZOOM_MIN_SCALE: f32 = 0.25;
+/// Largest allowed `OrthographicProjection::scale` (most zoomed out) — keeps
+/// the background grid tile pool (see `sync_background_grid`) from having to
+/// cover an unbounded viewport.
+pub const CAMERA_ZOOM_MAX_SCALE: f32 = 4.0;
+/// Multiplicative zoom step applied per notch of `MouseWheel` scroll (e.g.
+/// `1.0 - CAMERA_WHEEL_ZOOM_SENSITIVITY` per notch scrolled toward the
+/// screen). Exponential rather than additive so the zoom feels consistent at
+/// any current scale.
+pub const CAMERA_WHEEL_ZOOM_SENSITIVITY: f32 = 0.1;
+/// Approximate pixels per scroll "notch", used to normalize
+/// `MouseWheel`/`MouseScrollUnit::Pixel` deltas (trackpads, and the wheel
+/// events this project's own browser test tooling dispatches) down to the
+/// same effective step size as `MouseScrollUnit::Line` deltas (physical
+/// mouse wheels, ~1 unit per notch) before applying
+/// `CAMERA_WHEEL_ZOOM_SENSITIVITY` — without this, a single Pixel-unit
+/// scroll event is ~100x a Line-unit one and instantly slams the zoom into
+/// its clamped bounds.
+pub const CAMERA_WHEEL_PIXELS_PER_LINE: f32 = 100.0;

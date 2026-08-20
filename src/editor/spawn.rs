@@ -32,6 +32,15 @@ const PIN_Y_OFFSET: f32 = GRID_CELL_SIZE;
 pub(crate) fn facing_quat(rotation: u8) -> Quat {
     Quat::from_rotation_z(-(rotation as f32) * std::f32::consts::FRAC_PI_2)
 }
+
+/// Inverse of `facing_quat`: recovers the quarter-turn count (0-3) a root
+/// `Transform`'s current Z rotation was built from. `rem_euclid` normalizes
+/// away from `to_scaled_axis`'s `(-pi, pi]` range (e.g. rotation 3 comes back
+/// as a raw -1 before wrapping) into the same 0-3 space `facing_quat` takes.
+pub(crate) fn rotation_from_transform(transform: &Transform) -> u8 {
+    let raw = (-transform.rotation.to_scaled_axis().z / std::f32::consts::FRAC_PI_2).round() as i32;
+    raw.rem_euclid(4) as u8
+}
 // A 2-input gate's footprint is 3 nodes wide x 2 nodes tall: the two input
 // rows ARE the two grid nodes (anchor row + one row up), not the anchor row
 // +/- a full row each, which would make the pins' own cells overhang the
@@ -43,7 +52,7 @@ pub(crate) const GATE_BODY_ROW_OFFSET: f32 = GRID_CELL_SIZE / 2.0;
 /// A flat-color placeholder shown at roughly the final footprint while a
 /// body's real pixel-art appearance streams in asynchronously (see
 /// `PendingAppearance` / `apply_loaded_appearances`).
-fn placeholder_sprite(color: Color, blocks_wide: f32, blocks_tall: f32) -> Sprite {
+pub(crate) fn placeholder_sprite(color: Color, blocks_wide: f32, blocks_tall: f32) -> Sprite {
     Sprite {
         color,
         custom_size: Some(Vec2::new(

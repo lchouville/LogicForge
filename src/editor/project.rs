@@ -1,0 +1,335 @@
+use std::collections::HashMap;
+
+use bevy::prelude::*;
+
+use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
+
+use super::chip_structure::{
+    ActiveStructureColor, SelectedStructureBlock, StructureBlockKind, StructureCell,
+    StructureDragState, spawn_structure_block,
+};
+use super::chip_view::PreChipEditCamera;
+use super::edit_mode::reset_transient_editor_state;
+use super::resources::TransientEditorState;
+use super::spawn::{
+    rotation_from_transform, spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_switch,
+};
+use crate::constants::SPAWN_Z_STEP;
+use crate::rendering::cable::spawn_cable;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProjectId(pub u32);
+
+pub struct ProjectEntry {
+    pub id: ProjectId,
+    pub name: String,
+}
+
+/// A placed circuit entity, captured just enough to respawn it identically
+/// via the same `spawn_*` functions used for live placement — see
+/// `switch_to_project`. Deliberately not `#[derive(Serialize)]`: this never
+/// leaves memory, so plain Rust data is enough (every field here is already
+/// `Copy` on its source component).
+enum SavedEntity {
+    AndOrGate {
+        kind: GateKind,
+        cell: IVec2,
+        rotation: u8,
+    },
+    NotGate {
+        cell: IVec2,
+        rotation: u8,
+    },
+    Switch {
+        cell: IVec2,
+        rotation: u8,
+        on: bool,
+    },
+    Lamp {
+        cell: IVec2,
+        rotation: u8,
+    },
+    Cable {
+        start: IVec2,
+        end: IVec2,
+    },
+}
+
+struct SavedCamera {
+    translation: Vec2,
+    scale: f32,
+}
+
+/// A structure block, captured just enough to respawn it via
+/// `chip_structure::spawn_structure_block` — same reasoning as
+/// `SavedEntity`.
+struct SavedStructureBlock {
+    kind: StructureBlockKind,
+    cell: IVec2,
+}
+
+/// Matches every root circuit entity (gate/switch/lamp all carry
+/// `GridPosition`, a cable carries `Cable`) — used both to bulk-despawn the
+/// outgoing project's circuit and, in `sidebar::handle_project_selection`, to
+/// prove that query disjoint from the camera's own `Transform` access.
+pub type CircuitEntityFilter = Or<(With<GridPosition>, With<Cable>)>;
+
+/// A project's circuit while it isn't the active one — `None` camera means
+/// "never visited yet, use the default view". `structure_color: None` means
+/// "never customized yet", so a fresh project starts on
+/// `ActiveStructureColor`'s own default rather than baking that default in
+/// here too.
+#[derive(Default)]
+struct ProjectData {
+    entities: Vec<SavedEntity>,
+    camera: Option<SavedCamera>,
+    structure_entities: Vec<SavedStructureBlock>,
+    structure_color: Option<Color>,
+}
+
+/// The full set of projects (flat list for now — no sub-folders yet, see the
+/// roadmap plan) plus the parked circuit data for every project that isn't
+/// currently live in the world. Only the active project's entities actually
+/// exist as ECS entities at any given time; every other project's circuit is
+/// held here as data until switched back to.
+#[derive(Resource)]
+pub struct ProjectLibrary {
+    pub entries: Vec<ProjectEntry>,
+    data: HashMap<ProjectId, ProjectData>,
+    pub active: ProjectId,
+    next_id: u32,
+}
+
+impl ProjectLibrary {
+    fn allocate_id(&mut self) -> ProjectId {
+        let id = ProjectId(self.next_id);
+        self.next_id += 1;
+        id
+    }
+
+    /// Adds a new empty project to the list and returns its id — does not
+    /// switch to it; callers that want that (e.g. "Nouveau projet") should
+    /// follow up with `switch_to_project`, which already treats a missing
+    /// `data` entry as an empty project.
+    pub fn create_project(&mut self) -> ProjectId {
+        let id = self.allocate_id();
+        self.entries.push(ProjectEntry {
+            id,
+            // `id.0` alone (not `+ 1`) reads as "Projet 1" for the first
+            // created project: id 0 is reserved for `FREE_MODE_PROJECT` and
+            // never allocated here (`next_id` starts at 1).
+            name: format!("Projet {}", id.0),
+        });
+        id
+    }
+}
+
+/// Which of a project's two screens is showing: the normal circuit editor,
+/// or the chip structure editor (Corps/Pin/Lampe blocks — see
+/// `chip_structure.rs`). Reset to `Standard` on every project switch rather
+/// than remembered per-project, to keep v1 simple.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectView {
+    #[default]
+    Standard,
+    ChipEdit,
+}
+
+/// Bundles `ProjectView` + `PreChipEditCamera` + the structure editor's own
+/// selection/drag state for `switch_to_project` — a project switch always
+/// forces the view back to `Standard` and clears every piece of transient
+/// state that could reference a structure block about to be despawned (same
+/// reasoning as `TransientEditorState` for the interior circuit). Spelling
+/// these out as separate parameters on `sidebar::handle_project_selection`
+/// (already at 15) would push it past Bevy's 16-parameter system limit —
+/// same reasoning as `resources::TransientEditorState` itself.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ViewSwitchState<'w> {
+    pub view: ResMut<'w, ProjectView>,
+    pub pre_chip_edit_camera: ResMut<'w, PreChipEditCamera>,
+    pub selected_structure: ResMut<'w, SelectedStructureBlock>,
+    pub structure_drag: ResMut<'w, StructureDragState>,
+}
+
+/// Starts the player on a real, visible, selected "Projet 1" — same
+/// `create_project` auto-naming as any project the player creates later, no
+/// special-cased hidden entry (an earlier version of this reserved id `0`
+/// for an unlisted "free mode" project; the player found that confusing —
+/// see `notes/claude/2026-08-19.md` — so it's gone).
+pub fn init_project_library(mut commands: Commands) {
+    let mut library = ProjectLibrary {
+        entries: Vec::new(),
+        data: HashMap::new(),
+        active: ProjectId(0),
+        next_id: 1,
+    };
+    library.active = library.create_project();
+    commands.insert_resource(library);
+}
+
+/// Snapshots the currently-active circuit into `library`'s data for its own
+/// id, despawns it from the world, then respawns `target`'s saved circuit
+/// (or nothing, if `target` has never been visited) and restores its camera
+/// view. No-op if `target` is already active. Also resets every piece of
+/// transient editor state that could reference a now-despawned entity —
+/// same reasoning as `reset_transient_editor_state`'s own doc comment.
+#[allow(clippy::too_many_arguments)]
+pub fn switch_to_project(
+    target: ProjectId,
+    library: &mut ProjectLibrary,
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    gates: &Query<(&GateKind, &GridPosition, &Transform)>,
+    switches: &Query<(&Switch, &GridPosition, &Transform)>,
+    lamps: &Query<(&Lamp, &GridPosition, &Transform)>,
+    cables: &Query<&Cable>,
+    despawn_targets: &Query<Entity, CircuitEntityFilter>,
+    structure_blocks: &Query<(&StructureBlockKind, &StructureCell)>,
+    structure_despawn_targets: &Query<Entity, With<StructureCell>>,
+    active_structure_color: &mut ActiveStructureColor,
+    camera_transform: &mut Transform,
+    projection: &mut Projection,
+    state: &mut TransientEditorState,
+    view_switch: &mut ViewSwitchState,
+) {
+    if target == library.active {
+        return;
+    }
+
+    let mut outgoing = ProjectData::default();
+    for (kind, position, transform) in gates.iter() {
+        let rotation = rotation_from_transform(transform);
+        outgoing.entities.push(match kind {
+            GateKind::And | GateKind::Or => SavedEntity::AndOrGate {
+                kind: *kind,
+                cell: position.0,
+                rotation,
+            },
+            GateKind::Not => SavedEntity::NotGate {
+                cell: position.0,
+                rotation,
+            },
+        });
+    }
+    for (switch, position, transform) in switches.iter() {
+        outgoing.entities.push(SavedEntity::Switch {
+            cell: position.0,
+            rotation: rotation_from_transform(transform),
+            on: switch.on,
+        });
+    }
+    for (_, position, transform) in lamps.iter() {
+        outgoing.entities.push(SavedEntity::Lamp {
+            cell: position.0,
+            rotation: rotation_from_transform(transform),
+        });
+    }
+    for cable in cables.iter() {
+        outgoing.entities.push(SavedEntity::Cable {
+            start: cable.start,
+            end: cable.end,
+        });
+    }
+    outgoing.camera = Some(SavedCamera {
+        translation: camera_transform.translation.truncate(),
+        scale: orthographic_scale(projection),
+    });
+    for (kind, cell) in structure_blocks.iter() {
+        outgoing.structure_entities.push(SavedStructureBlock {
+            kind: *kind,
+            cell: cell.0,
+        });
+    }
+    outgoing.structure_color = Some(active_structure_color.0);
+    library.data.insert(library.active, outgoing);
+
+    for entity in despawn_targets.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in structure_despawn_targets.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    state.spawn_order.0 = 0.0;
+    let incoming = library.data.remove(&target).unwrap_or_default();
+    for saved in &incoming.entities {
+        let z = state.spawn_order.0;
+        state.spawn_order.0 += SPAWN_Z_STEP;
+        match *saved {
+            SavedEntity::AndOrGate {
+                kind,
+                cell,
+                rotation,
+            } => {
+                spawn_and_or_gate(commands, asset_server, cell, kind, rotation, z);
+            }
+            SavedEntity::NotGate { cell, rotation } => {
+                spawn_not_gate(commands, asset_server, cell, rotation, z);
+            }
+            SavedEntity::Switch { cell, rotation, on } => {
+                let entity = spawn_switch(commands, asset_server, cell, rotation, z);
+                if on {
+                    commands.entity(entity).insert(Switch { on: true });
+                }
+            }
+            SavedEntity::Lamp { cell, rotation } => {
+                spawn_lamp(commands, asset_server, cell, rotation, z);
+            }
+            SavedEntity::Cable { start, end } => {
+                spawn_cable(commands, asset_server, start, end);
+            }
+        }
+    }
+    active_structure_color.0 = incoming
+        .structure_color
+        .unwrap_or(ActiveStructureColor::default().0);
+    for saved in &incoming.structure_entities {
+        let z = state.spawn_order.0;
+        state.spawn_order.0 += SPAWN_Z_STEP;
+        spawn_structure_block(
+            commands,
+            asset_server,
+            saved.cell,
+            saved.kind,
+            active_structure_color.0,
+            z,
+        );
+    }
+
+    let (new_translation, new_scale) = match incoming.camera {
+        Some(saved) => (saved.translation, saved.scale),
+        None => (Vec2::ZERO, 1.0),
+    };
+    camera_transform.translation = new_translation.extend(camera_transform.translation.z);
+    if let Projection::Orthographic(ortho) = projection {
+        ortho.scale = new_scale;
+    }
+
+    library.active = target;
+
+    reset_transient_editor_state(
+        &mut state.armed,
+        &mut state.interaction,
+        &mut state.drag,
+        &mut state.cycle,
+        &mut state.selected,
+    );
+
+    // A project switch always lands in the interior circuit's Standard view
+    // — `camera_transform` above was just set to *that* project's saved
+    // interior view, so a stale `ChipEdit` here would show it through the
+    // structure editor's toolbar/input instead, and clicking would try to
+    // place structure blocks at nonsense coordinates (interior position
+    // minus `STRUCTURE_SPACE_OFFSET`).
+    *view_switch.view = ProjectView::Standard;
+    view_switch.pre_chip_edit_camera.clear();
+    view_switch.selected_structure.0 = None;
+    *view_switch.structure_drag = StructureDragState::Idle;
+}
+
+fn orthographic_scale(projection: &Projection) -> f32 {
+    match projection {
+        Projection::Orthographic(ortho) => ortho.scale,
+        _ => 1.0,
+    }
+}
