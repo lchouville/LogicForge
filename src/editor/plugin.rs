@@ -5,12 +5,15 @@ use super::camera_control::{
     handle_camera_wheel_zoom,
 };
 use super::chip_structure::{
-    ActiveStructureColor, ArmedStructureTool, SelectedStructureBlock, StructureDragState,
-    handle_delete_selected_structure_block, handle_structure_click, handle_structure_click_end,
-    handle_structure_color_button_click, handle_structure_drag, handle_structure_tool_button_click,
+    ActiveStructureColor, ActiveStructureLabel, ArmedStructureTool, SelectedStructureBlock,
+    StructureDragState, StructureLabelFocus, handle_delete_selected_structure_block,
+    handle_structure_camera_pan, handle_structure_click, handle_structure_click_end,
+    handle_structure_color_button_click, handle_structure_drag, handle_structure_label_field_click,
+    handle_structure_label_typing, handle_structure_tool_button_click,
     render_structure_hover_highlight, render_structure_selection_highlight,
-    spawn_structure_toolbar, sync_structure_color, sync_structure_toolbar_highlight,
-    sync_structure_toolbar_visibility,
+    spawn_structure_name_label, spawn_structure_toolbar, sync_structure_color,
+    sync_structure_label_field_border, sync_structure_label_field_text, sync_structure_name_label,
+    sync_structure_pin_legs, sync_structure_toolbar_highlight, sync_structure_toolbar_visibility,
 };
 use super::chip_view::{PreChipEditCamera, handle_chip_view_toggle_click};
 use super::edit_mode::{
@@ -63,6 +66,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<SelectedStructureBlock>()
             .init_resource::<StructureDragState>()
             .init_resource::<PreChipEditCamera>()
+            .init_resource::<ActiveStructureLabel>()
+            .init_resource::<StructureLabelFocus>()
             .add_systems(
                 Startup,
                 (
@@ -74,6 +79,7 @@ impl Plugin for EditorPlugin {
                     init_project_library,
                     spawn_sidebar,
                     spawn_structure_toolbar,
+                    spawn_structure_name_label,
                 ),
             )
             .add_systems(
@@ -85,6 +91,12 @@ impl Plugin for EditorPlugin {
                     // before either of the two mutually-exclusive groups
                     // below regardless of which one is actually active.
                     (update_pointer_state, update_pointer_over_ui),
+                    // Wheel/pinch zoom are pure camera math — no dependency
+                    // on `GridPosition`/`Cable`/`ArmedTool`/`ProjectView` —
+                    // so unlike everything else input-related below, they
+                    // run in both the standard editor and the chip structure
+                    // editor without needing a view-specific variant.
+                    (handle_camera_wheel_zoom, handle_camera_pinch_zoom).chain(),
                     (
                         (
                             handle_tool_arming,
@@ -92,12 +104,7 @@ impl Plugin for EditorPlugin {
                             toggle_mode,
                             handle_tool_button_click,
                         ),
-                        (
-                            handle_camera_pan,
-                            handle_camera_wheel_zoom,
-                            handle_camera_pinch_zoom,
-                        )
-                            .chain(),
+                        handle_camera_pan,
                         (
                             handle_left_click_start,
                             render_cable_drag_preview,
@@ -124,6 +131,9 @@ impl Plugin for EditorPlugin {
                         handle_structure_tool_button_click,
                         handle_structure_color_button_click,
                         sync_structure_color,
+                        handle_structure_camera_pan,
+                        handle_structure_label_field_click,
+                        handle_structure_label_typing,
                     )
                         .run_if(resource_equals(ProjectView::ChipEdit)),
                 )
@@ -149,8 +159,32 @@ impl Plugin for EditorPlugin {
                     sync_chip_view_toggle_label,
                     sync_structure_toolbar_visibility,
                     sync_structure_toolbar_highlight,
+                    sync_structure_label_field_text,
+                    sync_structure_label_field_border,
                     render_structure_selection_highlight,
                     render_structure_hover_highlight,
+                    // Deliberately NOT gated by `run_if(ProjectView::ChipEdit)`
+                    // like the structure input-handling systems above: a
+                    // project switch (`project::switch_to_project`) despawns
+                    // the outgoing project's structure blocks and forces
+                    // `ProjectView` back to `Standard` within the same system
+                    // call. If this were gated the same way, a switch that
+                    // happens to run before this system in the same frame
+                    // would flip the view off before the gate is checked,
+                    // silently dropping that frame's `RemovedComponents`
+                    // event — `RemovedComponents` only buffers for a couple
+                    // of frames, so the leg entities for the blocks that just
+                    // got despawned would leak as orphaned sprites, stranded
+                    // in structure-space until the app restarts. Running
+                    // ungated (like the render/sync systems already here)
+                    // avoids the race entirely; its own early-return already
+                    // makes it a no-op on every frame nothing changed.
+                    sync_structure_pin_legs,
+                    // Same reasoning as `sync_structure_pin_legs` above — not
+                    // respawned per project so there's no leak risk of its
+                    // own, but keeping it ungated too avoids depending on
+                    // exactly when `ProjectView` flips during a switch.
+                    sync_structure_name_label,
                 ),
             )
             .add_systems(

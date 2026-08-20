@@ -1,3 +1,5 @@
+use bevy::input::ButtonState;
+use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 
 use crate::constants::{
@@ -9,6 +11,7 @@ use crate::constants::{
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::rendering::appearance::PendingAppearance;
 
+use super::camera_control::{CameraPanState, PanSource};
 use super::hud::PointerOverUi;
 use super::pointer::PointerState;
 use super::project::ProjectView;
@@ -74,6 +77,18 @@ impl Default for ActiveStructureColor {
     }
 }
 
+/// The chip's name, as typed into the structure toolbar's text field (see
+/// `StructureLabelField`) — shown both there and on the world-space label
+/// above the structure (`StructureNameLabel`, `sync_structure_name_label`).
+/// Same per-project role as `ActiveStructureColor`, just for text.
+#[derive(Resource, Default, Clone)]
+pub struct ActiveStructureLabel(pub String);
+
+/// Whether the toolbar's name field is currently capturing keystrokes — see
+/// `handle_structure_label_field_click` / `handle_structure_label_typing`.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StructureLabelFocus(pub bool);
+
 #[derive(Component)]
 pub(crate) struct StructureToolbar;
 
@@ -86,6 +101,18 @@ pub(crate) struct StructureColorButton(Color);
 /// Touch/click equivalent of `Delete`/`Backspace` — mirrors `hud::DeleteButton`.
 #[derive(Component)]
 pub(crate) struct StructureDeleteButton;
+
+/// The clickable name field itself — clicking it toggles `StructureLabelFocus`.
+#[derive(Component)]
+pub(crate) struct StructureLabelField;
+
+/// The `Text` child of `StructureLabelField` that
+/// `sync_structure_label_field_text` keeps in sync with `ActiveStructureLabel`.
+#[derive(Component)]
+pub(crate) struct StructureLabelText;
+
+/// Shown in the name field in place of an empty `ActiveStructureLabel`.
+const STRUCTURE_LABEL_PLACEHOLDER: &str = "Nom de la puce";
 
 /// Spawns one 1x1 structure block. `Pin` reuses the exact same visual as an
 /// interior pin (`spawn::pin`'s `pin.json` appearance, same
@@ -109,7 +136,10 @@ pub fn spawn_structure_block(
     ));
     match kind {
         StructureBlockKind::Body => {
-            entity.insert(placeholder_sprite(body_color, 1.0, 1.0));
+            entity.insert((
+                placeholder_sprite(body_color, 1.0, 1.0),
+                PendingAppearance(asset_server.load("appearances/structure_body.json")),
+            ));
         }
         StructureBlockKind::Pin => {
             entity.insert((
@@ -239,6 +269,103 @@ pub fn handle_structure_click_end(
     *drag = StructureDragState::Idle;
 }
 
+/// Structure-space equivalent of `camera_control::handle_camera_pan` — same
+/// `CameraPanState` state machine and drag-from-empty-space convention, but
+/// decides whether to start a pan using `ArmedStructureTool` and
+/// `StructureCell` occupancy instead of the interior editor's own
+/// `ArmedTool`/`GridPosition`/`Cable`, none of which mean anything in
+/// structure space. Kept as its own system (mirroring `handle_structure_click`
+/// vs `handle_left_click_start`/`handle_edit_click_start`) rather than
+/// teaching `handle_camera_pan` about both spaces — the interior editor's own
+/// pan was already debugged once for a judder bug (see
+/// `notes/claude/2026-08-18.md`), so it's left untouched rather than risking
+/// a regression there.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_structure_camera_pan(
+    mouse: Res<ButtonInput<MouseButton>>,
+    pointer: Res<PointerState>,
+    touches: Res<Touches>,
+    armed: Res<ArmedStructureTool>,
+    pointer_over_ui: Res<PointerOverUi>,
+    blocks: Query<&StructureCell>,
+    mut pan: ResMut<CameraPanState>,
+    camera_query: Single<(&Camera, &GlobalTransform, &mut Transform), With<Camera2d>>,
+) {
+    let (camera, camera_transform, mut transform) = camera_query.into_inner();
+
+    if touches.iter().count() >= 2
+        && !matches!(
+            *pan,
+            CameraPanState::Panning {
+                source: PanSource::Middle,
+                ..
+            }
+        )
+    {
+        *pan = CameraPanState::Idle;
+    }
+
+    if mouse.just_pressed(MouseButton::Middle)
+        && let Some(screen_pos) = pointer.screen_pos
+    {
+        *pan = CameraPanState::Panning {
+            last_screen_pos: screen_pos,
+            source: PanSource::Middle,
+        };
+    } else if pointer.just_pressed
+        && armed.0.is_none()
+        && !pointer_over_ui.0
+        && let Some(world_pos) = pointer.world_pos
+    {
+        let cell = world_to_cell(world_pos - STRUCTURE_SPACE_OFFSET);
+        let occupied = blocks.iter().any(|structure_cell| structure_cell.0 == cell);
+        if !occupied {
+            *pan = CameraPanState::Pressed {
+                start_cursor: world_pos,
+            };
+        }
+    }
+
+    match *pan {
+        CameraPanState::Idle => {}
+        CameraPanState::Pressed { start_cursor } => {
+            if !pointer.pressed {
+                *pan = CameraPanState::Idle;
+            } else if let Some(world_pos) = pointer.world_pos
+                && let Some(screen_pos) = pointer.screen_pos
+                && start_cursor.distance(world_pos) > EDIT_DRAG_THRESHOLD
+            {
+                *pan = CameraPanState::Panning {
+                    last_screen_pos: screen_pos,
+                    source: PanSource::Pointer,
+                };
+            }
+        }
+        CameraPanState::Panning {
+            last_screen_pos,
+            source,
+        } => {
+            let still_pressed = match source {
+                PanSource::Middle => mouse.pressed(MouseButton::Middle),
+                PanSource::Pointer => pointer.pressed,
+            };
+            if !still_pressed {
+                *pan = CameraPanState::Idle;
+            } else if let Some(current_world) = pointer.world_pos
+                && let Some(current_screen) = pointer.screen_pos
+                && let Ok(last_world_reprojected) =
+                    camera.viewport_to_world_2d(camera_transform, last_screen_pos)
+            {
+                transform.translation -= (current_world - last_world_reprojected).extend(0.0);
+                *pan = CameraPanState::Panning {
+                    last_screen_pos: current_screen,
+                    source,
+                };
+            }
+        }
+    }
+}
+
 /// Deletes the selected structure block on Delete/Backspace or the
 /// structure toolbar's own Delete button — mirrors
 /// `edit_mode::handle_delete_selected`.
@@ -313,20 +440,190 @@ pub fn render_structure_hover_highlight(
     draw_structure_block_outline(&mut gizmos, hovered.0, COLOR_HOVER);
 }
 
-/// Re-tints every currently-placed Corps block when `ActiveStructureColor`
-/// changes — Pin/Lamp blocks keep their own fixed color regardless.
+/// Re-tints every currently-placed Corps block from `ActiveStructureColor`
+/// — Pin/Lamp blocks keep their own fixed color regardless. Deliberately
+/// unconditional (no `is_changed()` guard): `apply_loaded_appearances`
+/// (`rendering/appearance.rs`) replaces a Body block's whole `Sprite` —
+/// resetting `color` to white — the moment its `structure_body.json`
+/// appearance finishes loading asynchronously, which can land on any frame
+/// well after the last color change. Re-applying every frame this system
+/// runs (already gated to `ProjectView::ChipEdit`, cheap given how few
+/// blocks a chip structure ever has) catches that reset instead of leaving
+/// the block flashing white until the player happens to touch the palette
+/// again — same reasoning as `sync_pin_colors` (`rendering/sync.rs`), which
+/// has no guard of its own for the identical reason.
 pub fn sync_structure_color(
     color: Res<ActiveStructureColor>,
     mut blocks: Query<(&StructureBlockKind, &mut Sprite)>,
 ) {
-    if !color.is_changed() {
-        return;
-    }
     for (kind, mut sprite) in &mut blocks {
         if *kind == StructureBlockKind::Body {
             sprite.color = color.0;
         }
     }
+}
+
+/// A visual-only leg sprite bridging a Pin block to an orthogonally-adjacent
+/// Corps or Lampe block — see `sync_structure_pin_legs`.
+#[derive(Component)]
+pub(crate) struct StructurePinLeg;
+
+/// Makes a "leg" sprite (same `pin_lead.json` art as `spawn::leg`) appear
+/// between every Pin block and any Corps or Lampe block orthogonally
+/// adjacent to it — same visual language as native gates' own pins (see
+/// `spawn.rs`), but recomputed on change rather than fixed at spawn time,
+/// since Pin, Corps and Lampe are independent blocks here that can each be
+/// placed/dragged/deleted on their own. Despawns and fully respawns every leg
+/// on each recompute rather than reconciling incrementally: a chip structure's block count is always
+/// small, so there's no need for the extra complexity (same reasoning as
+/// `sync_background_grid`'s pool, just skipped here since it doesn't pay for
+/// itself at this scale). This full despawn also incidentally cleans up a
+/// previous project's legs the moment a new project's blocks respawn
+/// (triggering `Added<StructureCell>`), with no need to touch
+/// `project::switch_to_project` itself.
+pub fn sync_structure_pin_legs(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut removed: RemovedComponents<StructureCell>,
+    changed: Query<(), Changed<StructureCell>>,
+    blocks: Query<(&StructureCell, &StructureBlockKind)>,
+    legs: Query<Entity, With<StructurePinLeg>>,
+) {
+    let removed_any = removed.read().count() > 0;
+    if changed.is_empty() && !removed_any {
+        return;
+    }
+
+    for entity in &legs {
+        commands.entity(entity).despawn();
+    }
+
+    // A Pin attaches to either a Corps or a Lampe block — the two are the
+    // only kinds a Pin ever needs to visually anchor to; a Pin never
+    // attaches to another Pin.
+    let attach_cells: Vec<IVec2> = blocks
+        .iter()
+        .filter(|(_, kind)| matches!(kind, StructureBlockKind::Body | StructureBlockKind::Lamp))
+        .map(|(cell, _)| cell.0)
+        .collect();
+
+    const NEIGHBOR_OFFSETS: [IVec2; 4] = [
+        IVec2::new(1, 0),
+        IVec2::new(-1, 0),
+        IVec2::new(0, 1),
+        IVec2::new(0, -1),
+    ];
+
+    for (cell, kind) in &blocks {
+        if !matches!(kind, StructureBlockKind::Pin) {
+            continue;
+        }
+        for offset in NEIGHBOR_OFFSETS {
+            let neighbor = cell.0 + offset;
+            if !attach_cells.contains(&neighbor) {
+                continue;
+            }
+            let mid_world =
+                (cell_to_world(cell.0) + cell_to_world(neighbor)) / 2.0 + STRUCTURE_SPACE_OFFSET;
+            // `pin_lead.json` is authored as a horizontal bar (the same
+            // asset native gates use unrotated for their own left/right
+            // legs — see `spawn::leg`); rotate a quarter turn for a
+            // vertically-adjacent pin. The art is symmetric, so one
+            // rotation covers both the up and down cases.
+            let rotation = if offset.x != 0 {
+                Quat::IDENTITY
+            } else {
+                Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)
+            };
+            commands.spawn((
+                StructurePinLeg,
+                Sprite::default(),
+                PendingAppearance(asset_server.load("appearances/pin_lead.json")),
+                Transform::from_translation(mid_world.extend(-0.05)).with_rotation(rotation),
+            ));
+        }
+    }
+}
+
+/// The chip's name, rendered in world-space above the topmost Corps block —
+/// a single entity spawned once at `Startup` (`spawn_structure_name_label`)
+/// and kept in sync in place by `sync_structure_name_label`. Unlike
+/// `StructurePinLeg`, it has no lifecycle tied to `StructureCell` — nothing
+/// to leak across a project switch — so there's no need to despawn/respawn
+/// it at all, just reposition/retext/reshow it.
+#[derive(Component)]
+pub(crate) struct StructureNameLabel;
+
+/// Extra world-space gap above the topmost Corps row so the label reads as
+/// floating above the structure instead of touching it.
+const STRUCTURE_LABEL_Y_PADDING: f32 = GRID_CELL_SIZE * 0.75;
+
+/// Comfortably above every placed structure block's own z (which climbs
+/// from 0.0 by `SPAWN_Z_STEP` per block) — the label sits well outside their
+/// footprint in Y anyway, so this mostly just keeps it deterministic.
+const STRUCTURE_LABEL_Z: f32 = 2.0;
+
+pub fn spawn_structure_name_label(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn((
+        StructureNameLabel,
+        Text2d::new(""),
+        TextFont {
+            font: asset_server.load(UI_FONT_PATH).into(),
+            font_size: LABEL_FONT_SIZE.into(),
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Transform::default(),
+        Visibility::Hidden,
+    ));
+}
+
+/// Positions, retexts and shows/hides the chip name label from
+/// `ActiveStructureLabel` and the current Corps blocks. Deliberately
+/// ungated by `ProjectView::ChipEdit` — same reasoning as
+/// `sync_structure_pin_legs`: recomputing while hidden costs nothing, and a
+/// `run_if` gate that happens to be off exactly when a project switch
+/// despawns/respawns blocks would risk the same missed-frame class of bug
+/// already hit (and fixed) there.
+pub fn sync_structure_name_label(
+    label: Res<ActiveStructureLabel>,
+    mut removed: RemovedComponents<StructureCell>,
+    changed: Query<(), Changed<StructureCell>>,
+    blocks: Query<(&StructureCell, &StructureBlockKind)>,
+    mut target: Query<(&mut Text2d, &mut Transform, &mut Visibility), With<StructureNameLabel>>,
+) {
+    let removed_any = removed.read().count() > 0;
+    if !label.is_changed() && changed.is_empty() && !removed_any {
+        return;
+    }
+    let Ok((mut text, mut transform, mut visibility)) = target.single_mut() else {
+        return;
+    };
+
+    let mut corps_cells = blocks
+        .iter()
+        .filter(|(_, kind)| matches!(kind, StructureBlockKind::Body))
+        .map(|(cell, _)| cell.0);
+    let Some(first) = corps_cells.next() else {
+        *visibility = Visibility::Hidden;
+        return;
+    };
+    let (min_x, max_x, max_y) = corps_cells.fold(
+        (first.x, first.x, first.y),
+        |(min_x, max_x, max_y), cell| (min_x.min(cell.x), max_x.max(cell.x), max_y.max(cell.y)),
+    );
+
+    if label.0.is_empty() {
+        *visibility = Visibility::Hidden;
+        return;
+    }
+
+    text.0 = label.0.clone();
+    let center_x = (min_x + max_x) as f32 / 2.0 * GRID_CELL_SIZE;
+    let top_y = max_y as f32 * GRID_CELL_SIZE;
+    let position = Vec2::new(center_x, top_y + STRUCTURE_LABEL_Y_PADDING) + STRUCTURE_SPACE_OFFSET;
+    transform.translation = position.extend(STRUCTURE_LABEL_Z);
+    *visibility = Visibility::Visible;
 }
 
 /// Same bundle shape as `hud::hud_button`, kept local since that one isn't
@@ -407,7 +704,32 @@ pub fn spawn_structure_toolbar(mut commands: Commands, asset_server: Res<AssetSe
             parent.spawn((
                 Button,
                 StructureDeleteButton,
-                structure_button_frame(font, "Delete"),
+                structure_button_frame(font.clone(), "Delete"),
+            ));
+            parent.spawn((
+                Button,
+                StructureLabelField,
+                Node {
+                    width: Val::Px(140.0),
+                    height: Val::Px(36.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::horizontal(Val::Px(8.0)),
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(COLOR_BUTTON_NORMAL),
+                BorderColor::all(COLOR_BUTTON_BORDER),
+                children![(
+                    StructureLabelText,
+                    Text::new(STRUCTURE_LABEL_PLACEHOLDER),
+                    TextFont {
+                        font: font.into(),
+                        font_size: LABEL_FONT_SIZE.into(),
+                        ..default()
+                    },
+                    TextColor(COLOR_BUTTON_BORDER),
+                )],
             ));
         });
 }
@@ -494,4 +816,106 @@ pub fn sync_structure_toolbar_highlight(
             COLOR_BUTTON_BORDER
         });
     }
+}
+
+/// Focuses the name field on click; defocuses it on Entrée/Échap, or on any
+/// other click (another toolbar button, or the canvas itself) — a stuck
+/// focus would otherwise swallow Delete/Backspace into the label text
+/// instead of letting `handle_delete_selected_structure_block` see them.
+pub fn handle_structure_label_field_click(
+    keys: Res<ButtonInput<KeyCode>>,
+    pointer: Res<PointerState>,
+    pointer_over_ui: Res<PointerOverUi>,
+    mut focus: ResMut<StructureLabelFocus>,
+    field: Query<&Interaction, (Changed<Interaction>, With<StructureLabelField>)>,
+    other_buttons: Query<&Interaction, (Changed<Interaction>, Without<StructureLabelField>)>,
+) {
+    if field.iter().any(|i| *i == Interaction::Pressed) {
+        focus.0 = true;
+        return;
+    }
+    if !focus.0 {
+        return;
+    }
+    let clicked_elsewhere_in_ui = other_buttons.iter().any(|i| *i == Interaction::Pressed);
+    let clicked_canvas = pointer.just_pressed && !pointer_over_ui.0;
+    if clicked_elsewhere_in_ui
+        || clicked_canvas
+        || keys.just_pressed(KeyCode::Enter)
+        || keys.just_pressed(KeyCode::Escape)
+    {
+        focus.0 = false;
+    }
+}
+
+/// Appends typed characters to `ActiveStructureLabel` while the name field
+/// is focused. Drains (rather than ignores) `KeyboardInput` while unfocused
+/// — `MessageReader`'s cursor otherwise keeps advancing through a growing
+/// backlog, and the next focus would replay every keystroke typed while
+/// unfocused in one burst.
+pub fn handle_structure_label_typing(
+    focus: Res<StructureLabelFocus>,
+    mut keys: MessageReader<KeyboardInput>,
+    mut label: ResMut<ActiveStructureLabel>,
+) {
+    if !focus.0 {
+        keys.clear();
+        return;
+    }
+    for event in keys.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match event.key_code {
+            KeyCode::Backspace => {
+                label.0.pop();
+            }
+            KeyCode::Enter | KeyCode::Escape => {}
+            _ => {
+                if let Some(text) = &event.text {
+                    label.0.push_str(text);
+                }
+            }
+        }
+    }
+}
+
+/// Keeps the toolbar field's displayed text in sync with
+/// `ActiveStructureLabel`, falling back to `STRUCTURE_LABEL_PLACEHOLDER`
+/// when empty.
+pub fn sync_structure_label_field_text(
+    label: Res<ActiveStructureLabel>,
+    mut text: Query<&mut Text, With<StructureLabelText>>,
+) {
+    if !label.is_changed() {
+        return;
+    }
+    let Ok(mut text) = text.single_mut() else {
+        return;
+    };
+    text.0 = if label.0.is_empty() {
+        STRUCTURE_LABEL_PLACEHOLDER.to_string()
+    } else {
+        label.0.clone()
+    };
+}
+
+/// Highlights the name field's border while it holds keyboard focus — same
+/// `COLOR_BUTTON_ARMED`/`COLOR_BUTTON_BORDER` convention as an armed
+/// structure tool.
+pub fn sync_structure_label_field_border(
+    focus: Res<StructureLabelFocus>,
+    mut field: Query<&mut BorderColor, With<StructureLabelField>>,
+) {
+    if !focus.is_changed() {
+        return;
+    }
+    let Ok(mut border) = field.single_mut() else {
+        return;
+    };
+    *border = BorderColor::all(if focus.0 {
+        COLOR_BUTTON_ARMED
+    } else {
+        COLOR_BUTTON_BORDER
+    });
 }

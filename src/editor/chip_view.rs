@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::constants::STRUCTURE_SPACE_OFFSET;
 
+use super::camera_control::{CameraPanState, PinchState};
 use super::chip_structure::{SelectedStructureBlock, StructureDragState};
 use super::hud::ChipViewToggleButton;
 use super::project::ProjectView;
@@ -36,6 +37,8 @@ pub fn handle_chip_view_toggle_click(
     mut pre_chip_edit_camera: ResMut<PreChipEditCamera>,
     mut selected_structure: ResMut<SelectedStructureBlock>,
     mut structure_drag: ResMut<StructureDragState>,
+    mut camera_pan: ResMut<CameraPanState>,
+    mut pinch: ResMut<PinchState>,
     toggle_button: Query<&Interaction, (Changed<Interaction>, With<ChipViewToggleButton>)>,
     mut camera: Single<(&mut Transform, &mut Projection), With<Camera2d>>,
 ) {
@@ -51,6 +54,20 @@ pub fn handle_chip_view_toggle_click(
     // or the gesture can no longer be completed) — see `SelectedStructureBlock`.
     selected_structure.0 = None;
     *structure_drag = StructureDragState::Idle;
+    // `CameraPanState`/`PinchState` are shared between `handle_camera_pan`
+    // (Standard) and `handle_structure_camera_pan` (ChipEdit) — both read
+    // and write the same resources, gated to run only in their own view.
+    // An in-progress pan/pinch left mid-gesture at the moment of toggling
+    // would otherwise survive into the other view and get picked up there:
+    // its `last_screen_pos`/pinch anchor was captured against the *old*
+    // camera transform, so re-projecting it through the transform this
+    // toggle just jumped to produces a bogus delta, yanking the camera off
+    // to some nonsense position instead of the clean jump above — which is
+    // exactly what could make interior and structure content appear to
+    // "leak" into each other's view. Resetting both here, same reasoning as
+    // the selection/drag reset just above.
+    *camera_pan = CameraPanState::Idle;
+    *pinch = PinchState::default();
 
     let (transform, projection) = &mut *camera;
     let Projection::Orthographic(ortho) = projection.as_mut() else {

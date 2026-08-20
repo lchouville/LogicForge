@@ -6,9 +6,10 @@ use crate::constants::{
 };
 use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
 
-use super::chip_structure::{ActiveStructureColor, StructureBlockKind, StructureCell};
+use super::chip_structure::{StructureBlockKind, StructureCell};
 use super::project::{
-    CircuitEntityFilter, ProjectId, ProjectLibrary, ViewSwitchState, switch_to_project,
+    CircuitEntityFilter, ProjectId, ProjectLibrary, StructureCustomization, ViewSwitchState,
+    switch_to_project,
 };
 use super::resources::TransientEditorState;
 
@@ -194,7 +195,7 @@ pub fn handle_project_selection(
     despawn_targets: Query<Entity, CircuitEntityFilter>,
     structure_blocks: Query<(&StructureBlockKind, &StructureCell)>,
     structure_despawn_targets: Query<Entity, With<StructureCell>>,
-    mut active_structure_color: ResMut<ActiveStructureColor>,
+    mut customization: StructureCustomization,
     mut camera: Single<(&mut Transform, &mut Projection), ActiveCameraFilter>,
     mut state: TransientEditorState,
     mut view_switch: ViewSwitchState,
@@ -226,7 +227,7 @@ pub fn handle_project_selection(
         &despawn_targets,
         &structure_blocks,
         &structure_despawn_targets,
-        &mut active_structure_color,
+        &mut customization,
         camera_transform,
         projection,
         &mut state,

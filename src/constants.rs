@@ -45,8 +45,14 @@ pub const SIDEBAR_WIDTH: f32 = 200.0;
 /// away from its interior circuit in the same ECS world, rather than needing
 /// to despawn/respawn either one when toggling between the two views — large
 /// enough that it's never visible at once with the interior circuit even
-/// fully zoomed out (`CAMERA_ZOOM_MAX_SCALE`).
-pub const STRUCTURE_SPACE_OFFSET: Vec2 = Vec2::new(100_000.0, 0.0);
+/// fully zoomed out (`CAMERA_ZOOM_MAX_SCALE`). Deliberately expressed as a
+/// multiple of `GRID_CELL_SIZE` rather than a bare literal: the tiled
+/// background grid (`sync_background_grid`) always draws at plain
+/// `cell_to_world(cell)`, with no offset of its own, so any offset here that
+/// isn't itself a whole number of cells desyncs the two grids — every
+/// structure block used to render visibly off the background grid's node
+/// icons until this was caught.
+pub const STRUCTURE_SPACE_OFFSET: Vec2 = Vec2::new(GRID_CELL_SIZE * 2_084.0, 0.0);
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
 pub const CABLE_BODY_HIT_DISTANCE: f32 = 6.0;

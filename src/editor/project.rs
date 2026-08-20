@@ -4,9 +4,10 @@ use bevy::prelude::*;
 
 use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
 
+use super::camera_control::{CameraPanState, PinchState};
 use super::chip_structure::{
-    ActiveStructureColor, SelectedStructureBlock, StructureBlockKind, StructureCell,
-    StructureDragState, spawn_structure_block,
+    ActiveStructureColor, ActiveStructureLabel, SelectedStructureBlock, StructureBlockKind,
+    StructureCell, StructureDragState, spawn_structure_block,
 };
 use super::chip_view::PreChipEditCamera;
 use super::edit_mode::reset_transient_editor_state;
@@ -75,16 +76,17 @@ struct SavedStructureBlock {
 pub type CircuitEntityFilter = Or<(With<GridPosition>, With<Cable>)>;
 
 /// A project's circuit while it isn't the active one — `None` camera means
-/// "never visited yet, use the default view". `structure_color: None` means
-/// "never customized yet", so a fresh project starts on
-/// `ActiveStructureColor`'s own default rather than baking that default in
-/// here too.
+/// "never visited yet, use the default view". `structure_color`/
+/// `structure_label: None` mean "never customized yet", so a fresh project
+/// starts on `ActiveStructureColor`/`ActiveStructureLabel`'s own defaults
+/// rather than baking those defaults in here too.
 #[derive(Default)]
 struct ProjectData {
     entities: Vec<SavedEntity>,
     camera: Option<SavedCamera>,
     structure_entities: Vec<SavedStructureBlock>,
     structure_color: Option<Color>,
+    structure_label: Option<String>,
 }
 
 /// The full set of projects (flat list for now — no sub-folders yet, see the
@@ -149,6 +151,26 @@ pub struct ViewSwitchState<'w> {
     pub pre_chip_edit_camera: ResMut<'w, PreChipEditCamera>,
     pub selected_structure: ResMut<'w, SelectedStructureBlock>,
     pub structure_drag: ResMut<'w, StructureDragState>,
+    /// Shared between `handle_camera_pan`/`handle_structure_camera_pan` —
+    /// forcing the view to `Standard` here can hand off a pan/pinch left
+    /// mid-gesture to the interior editor's own pan system, which would
+    /// reproject its stale screen position through a suddenly very
+    /// different camera transform (same hazard `handle_chip_view_toggle_click`
+    /// already guards against for the plain view-toggle case).
+    pub camera_pan: ResMut<'w, CameraPanState>,
+    pub pinch: ResMut<'w, PinchState>,
+}
+
+/// Bundles the two per-project structure customization resources
+/// (`ActiveStructureColor`, `ActiveStructureLabel`) into one system-param
+/// slot for `switch_to_project`'s callers — same reasoning as
+/// `ViewSwitchState` above: `sidebar::handle_project_selection` is already
+/// at Bevy's 16-parameter system limit, so a second bare `ResMut` here would
+/// push it over.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct StructureCustomization<'w> {
+    pub color: ResMut<'w, ActiveStructureColor>,
+    pub label: ResMut<'w, ActiveStructureLabel>,
 }
 
 /// Starts the player on a real, visible, selected "Projet 1" — same
@@ -186,7 +208,7 @@ pub fn switch_to_project(
     despawn_targets: &Query<Entity, CircuitEntityFilter>,
     structure_blocks: &Query<(&StructureBlockKind, &StructureCell)>,
     structure_despawn_targets: &Query<Entity, With<StructureCell>>,
-    active_structure_color: &mut ActiveStructureColor,
+    customization: &mut StructureCustomization,
     camera_transform: &mut Transform,
     projection: &mut Projection,
     state: &mut TransientEditorState,
@@ -240,7 +262,8 @@ pub fn switch_to_project(
             cell: cell.0,
         });
     }
-    outgoing.structure_color = Some(active_structure_color.0);
+    outgoing.structure_color = Some(customization.color.0);
+    outgoing.structure_label = Some(customization.label.0.clone());
     library.data.insert(library.active, outgoing);
 
     for entity in despawn_targets.iter() {
@@ -280,9 +303,10 @@ pub fn switch_to_project(
             }
         }
     }
-    active_structure_color.0 = incoming
+    customization.color.0 = incoming
         .structure_color
         .unwrap_or(ActiveStructureColor::default().0);
+    customization.label.0 = incoming.structure_label.unwrap_or_default();
     for saved in &incoming.structure_entities {
         let z = state.spawn_order.0;
         state.spawn_order.0 += SPAWN_Z_STEP;
@@ -291,7 +315,7 @@ pub fn switch_to_project(
             asset_server,
             saved.cell,
             saved.kind,
-            active_structure_color.0,
+            customization.color.0,
             z,
         );
     }
@@ -325,6 +349,8 @@ pub fn switch_to_project(
     view_switch.pre_chip_edit_camera.clear();
     view_switch.selected_structure.0 = None;
     *view_switch.structure_drag = StructureDragState::Idle;
+    *view_switch.camera_pan = CameraPanState::Idle;
+    *view_switch.pinch = PinchState::default();
 }
 
 fn orthographic_scale(projection: &Projection) -> f32 {
