@@ -1,4 +1,6 @@
 pub mod camera_control;
+pub mod chip_structure;
+pub mod chip_view;
 pub mod cursor;
 pub mod edit_mode;
 pub mod hud;
@@ -8,7 +10,9 @@ pub mod placement;
 pub mod plugin;
 pub mod pointer;
 pub mod preview;
+pub mod project;
 pub mod resources;
+pub mod sidebar;
 pub mod spawn;
 pub mod wiring;
 

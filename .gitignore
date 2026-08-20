@@ -5,3 +5,7 @@
 /web/logicforge.js
 /web/logicforge_bg.wasm
 /web/assets/
+
+# Graphify (VS Code extension) — local Python env + generated graph output
+/.graphify-venv
+/graphify-out

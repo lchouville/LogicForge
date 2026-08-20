@@ -69,13 +69,16 @@ pub fn spawn_inspector_panel(mut commands: Commands, asset_server: Res<AssetServ
                 Text::new(""),
                 inspector_text_font(font.clone())
             ),
-            // Magnifying-glass placeholder for the future chip circuit
-            // exploration view (roadmap item 5+, nothing to explore for
-            // native components) — deliberately not a `Button`/`Interaction`
-            // target, so it reads as disabled rather than clickable.
+            // Placeholder for the future chip circuit exploration view
+            // (roadmap item 5+, nothing to explore for native components) —
+            // deliberately not a `Button`/`Interaction` target, so it reads
+            // as disabled rather than clickable. Plain text, not a
+            // magnifying-glass icon: `FiraMono-Medium` only covers Latin —
+            // pictographic Unicode (🔍 U+1F50D) rendered as an empty
+            // missing-glyph box, confirmed visually in a browser build.
             (
                 Node {
-                    width: Val::Px(32.0),
+                    width: Val::Px(64.0),
                     height: Val::Px(32.0),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
@@ -85,7 +88,7 @@ pub fn spawn_inspector_panel(mut commands: Commands, asset_server: Res<AssetServ
                 BackgroundColor(COLOR_BUTTON_NORMAL.with_alpha(0.5)),
                 BorderColor::all(COLOR_BUTTON_BORDER.with_alpha(0.5)),
                 children![(
-                    Text::new("\u{1F50D}"),
+                    Text::new("Loupe"),
                     TextFont {
                         font: font.into(),
                         font_size: LABEL_FONT_SIZE.into(),
