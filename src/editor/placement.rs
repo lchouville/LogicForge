@@ -2,6 +2,8 @@ use bevy::prelude::*;
 
 use crate::simulation::components::GateKind;
 
+use super::chip_instance::{ChipInstance, spawn_chip_instance};
+use super::project::ProjectLibrary;
 use super::resources::{ArmedTool, PendingRotation, PickCycleState, ToolKind};
 use super::spawn::{spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_pin_header, spawn_switch};
 
@@ -84,9 +86,11 @@ pub fn pick_entity_at_cell(
     candidates.get(cycle.index).copied()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn place_tool(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    library: &ProjectLibrary,
     tool: ToolKind,
     cell: IVec2,
     rotation: u8,
@@ -110,6 +114,27 @@ pub fn place_tool(
         }
         ToolKind::Pin => {
             spawn_pin_header(commands, asset_server, cell, rotation, "", z);
+        }
+        ToolKind::Chip(source) => {
+            // `None` means the source project has no structure to copy
+            // (never visited, or emptied since it was picked) — a harmless
+            // no-op, same as clicking an already-occupied cell with another
+            // tool armed.
+            if let Some((display_name, body_color, blocks)) = library.chip_blueprint(source) {
+                spawn_chip_instance(
+                    commands,
+                    asset_server,
+                    cell,
+                    rotation,
+                    ChipInstance {
+                        source,
+                        display_name,
+                        body_color,
+                        blocks,
+                    },
+                    z,
+                );
+            }
         }
         ToolKind::Cable => {
             // Cables are placed via press+drag (see `handle_left_click_start`

@@ -1,4 +1,5 @@
 pub mod camera_control;
+pub mod chip_instance;
 pub mod chip_structure;
 pub mod chip_view;
 pub mod cursor;

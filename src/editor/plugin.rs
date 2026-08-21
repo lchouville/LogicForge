@@ -4,6 +4,10 @@ use super::camera_control::{
     CameraPanState, PinchState, handle_camera_pan, handle_camera_pinch_zoom,
     handle_camera_wheel_zoom,
 };
+use super::chip_instance::{
+    ChipPickerOpen, handle_chip_picker_row_click, handle_chip_picker_toggle_click,
+    spawn_chip_picker, sync_chip_picker_collapse, sync_chip_picker_rows,
+};
 use super::chip_structure::{
     ActiveStructureColor, ActiveStructureLabel, ArmedStructureTool, SelectedStructureBlock,
     StructureDragState, StructureLabelFocus, StructurePinLabelFocus,
@@ -81,6 +85,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<StructureLabelFocus>()
             .init_resource::<StructurePinLabelFocus>()
             .init_resource::<PinHeaderLabelFocus>()
+            .init_resource::<ChipPickerOpen>()
             .add_systems(
                 Startup,
                 (
@@ -95,6 +100,7 @@ impl Plugin for EditorPlugin {
                     spawn_structure_name_label,
                     spawn_structure_block_panel,
                     spawn_pin_header_panel,
+                    spawn_chip_picker,
                 ),
             )
             .add_systems(
@@ -135,6 +141,10 @@ impl Plugin for EditorPlugin {
                             handle_pin_header_label_field_click,
                             handle_pin_header_label_typing,
                             handle_pin_header_label_suggestion_click,
+                        ),
+                        (
+                            handle_chip_picker_toggle_click,
+                            handle_chip_picker_row_click,
                         ),
                     )
                         // The whole standard-editor input pipeline is frozen
@@ -196,6 +206,7 @@ impl Plugin for EditorPlugin {
                         sync_pin_header_label_field_border,
                         sync_pin_header_label_suggestions,
                     ),
+                    (sync_chip_picker_collapse, sync_chip_picker_rows),
                     render_structure_selection_highlight,
                     render_structure_hover_highlight,
                     // Deliberately NOT gated by `run_if(ProjectView::ChipEdit)`

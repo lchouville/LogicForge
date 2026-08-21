@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, PinHeader, Switch};
 
 use super::camera_control::{CameraPanState, PinchState};
+use super::chip_instance::{ChipInstance, spawn_chip_instance};
 use super::chip_structure::{
     ActiveStructureColor, ActiveStructureLabel, SelectedStructureBlock, StructureBlockKind,
     StructureCell, StructureDragState, StructurePinLabel, StructurePinLabelFocus,
@@ -27,6 +28,10 @@ pub struct ProjectEntry {
     pub id: ProjectId,
     pub name: String,
 }
+
+/// A chip's display name, its Corps tint, and its block layout — see
+/// `ProjectLibrary::chip_blueprint`.
+pub type ChipBlueprint = (String, Color, Vec<(IVec2, StructureBlockKind)>);
 
 /// A placed circuit entity, captured just enough to respawn it identically
 /// via the same `spawn_*` functions used for live placement — see
@@ -56,6 +61,14 @@ enum SavedEntity {
         cell: IVec2,
         rotation: u8,
         label: String,
+    },
+    Chip {
+        cell: IVec2,
+        rotation: u8,
+        source: ProjectId,
+        display_name: String,
+        body_color: Color,
+        blocks: Vec<(IVec2, StructureBlockKind)>,
     },
     Cable {
         start: IVec2,
@@ -133,6 +146,43 @@ impl ProjectLibrary {
         });
         id
     }
+
+    /// A frozen snapshot of `id`'s structure (display name, Corps tint,
+    /// block layout) for `chip_instance::spawn_chip_instance` to place a
+    /// copy of it as a component elsewhere — `None` if `id` was never
+    /// visited (no saved data) or has no structure blocks at all (nothing
+    /// to place), both treated identically by callers as "nothing to
+    /// place". Deliberately returns owned data rather than borrows: the
+    /// caller (placement) immediately bakes this into a `ChipInstance` that
+    /// outlives this project's own data, so there's nothing to keep this
+    /// borrowed against.
+    pub fn chip_blueprint(&self, id: ProjectId) -> Option<ChipBlueprint> {
+        let data = self.data.get(&id)?;
+        if data.structure_entities.is_empty() {
+            return None;
+        }
+        let display_name = data
+            .structure_label
+            .as_ref()
+            .filter(|label| !label.is_empty())
+            .cloned()
+            .or_else(|| {
+                self.entries
+                    .iter()
+                    .find(|entry| entry.id == id)
+                    .map(|entry| entry.name.clone())
+            })
+            .unwrap_or_default();
+        let body_color = data
+            .structure_color
+            .unwrap_or(ActiveStructureColor::default().0);
+        let blocks = data
+            .structure_entities
+            .iter()
+            .map(|block| (block.cell, block.kind))
+            .collect();
+        Some((display_name, body_color, blocks))
+    }
 }
 
 /// Which of a project's two screens is showing: the normal circuit editor,
@@ -205,6 +255,15 @@ pub struct CircuitQueries<'w, 's> {
             Option<&'static StructurePinLabel>,
         ),
         With<PinHeader>,
+    >,
+    pub chip_instances: Query<
+        'w,
+        's,
+        (
+            &'static ChipInstance,
+            &'static GridPosition,
+            &'static Transform,
+        ),
     >,
     pub cables: Query<'w, 's, &'static Cable>,
 }
@@ -290,6 +349,16 @@ pub fn switch_to_project(
             label: label.map(|l| l.0.clone()).unwrap_or_default(),
         });
     }
+    for (instance, position, transform) in circuit.chip_instances.iter() {
+        outgoing.entities.push(SavedEntity::Chip {
+            cell: position.0,
+            rotation: rotation_from_transform(transform),
+            source: instance.source,
+            display_name: instance.display_name.clone(),
+            body_color: instance.body_color,
+            blocks: instance.blocks.clone(),
+        });
+    }
     for cable in circuit.cables.iter() {
         outgoing.entities.push(SavedEntity::Cable {
             start: cable.start,
@@ -349,6 +418,28 @@ pub fn switch_to_project(
                 ref label,
             } => {
                 spawn_pin_header(commands, asset_server, cell, rotation, label, z);
+            }
+            SavedEntity::Chip {
+                cell,
+                rotation,
+                source,
+                ref display_name,
+                body_color,
+                ref blocks,
+            } => {
+                spawn_chip_instance(
+                    commands,
+                    asset_server,
+                    cell,
+                    rotation,
+                    ChipInstance {
+                        source,
+                        display_name: display_name.clone(),
+                        body_color,
+                        blocks: blocks.clone(),
+                    },
+                    z,
+                );
             }
             SavedEntity::Cable { start, end } => {
                 spawn_cable(commands, asset_server, start, end);

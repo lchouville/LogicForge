@@ -8,6 +8,7 @@ use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{Cable, GateKind, GridPosition};
 
 use super::camera_control::CameraPanState;
+use super::chip_instance::ChipInstance;
 use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
 use super::pin_header::PinHeaderLabelFocus;
 use super::placement::pick_entity_at_cell;
@@ -393,26 +394,69 @@ fn rotate_cable_endpoints(start: IVec2, end: IVec2, clockwise: bool) -> (IVec2, 
     )
 }
 
+/// Local-offset + size of the selection/hover box for a placed
+/// `ChipInstance`, computed from the min/max cell extent of its frozen
+/// blocks (each occupying exactly one `GRID_CELL_SIZE` cell, same
+/// convention as every other footprint here) — a chip's shape is arbitrary,
+/// unlike the fixed native footprints `draw_entity_outline` otherwise
+/// special-cases, so this can't be a hardcoded constant like
+/// `GATE_BODY_ROW_OFFSET`. Falls back to a plain 1x1 box for the
+/// (practically unreachable, `chip_blueprint` already excludes it)
+/// empty-blocks case.
+fn chip_instance_bounds(instance: &ChipInstance) -> (Vec2, Vec2) {
+    let Some((first, rest)) = instance.blocks.split_first() else {
+        return (Vec2::ZERO, Vec2::splat(GRID_CELL_SIZE));
+    };
+    let (mut min, mut max) = (first.0, first.0);
+    for (cell, _) in rest {
+        min = min.min(*cell);
+        max = max.max(*cell);
+    }
+    let center = (cell_to_world(min) + cell_to_world(max)) / 2.0;
+    let size = ((max - min).as_vec2() + Vec2::ONE) * GRID_CELL_SIZE;
+    (center, size)
+}
+
+/// Every placed component's facing + optional footprint markers, keyed by
+/// `GridPosition` — shared query shape for `draw_entity_outline` and its two
+/// callers below (factored into a type alias, not just inlined 3 times, so
+/// clippy's `type_complexity` lint doesn't flag each repetition separately).
+type FootprintQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Transform,
+        Option<&'static GateKind>,
+        Option<&'static ChipInstance>,
+    ),
+    With<GridPosition>,
+>;
+
 /// Draws an outline around one entity — a rotated box matching a placed
 /// component's facing and footprint (2 cells tall for AND/OR gates, see
-/// `GATE_BODY_ROW_OFFSET`; 1 cell otherwise), or a highlighted line +
-/// endpoint markers for a cable. Shared by `render_selection_highlight`
-/// (magenta) and `render_hover_highlight` (dimmer cyan) so the two stay
-/// visually consistent.
+/// `GATE_BODY_ROW_OFFSET`; the min/max cell extent of its blocks for a
+/// placed `ChipInstance`, see `chip_instance_bounds`; 1 cell otherwise), or
+/// a highlighted line + endpoint markers for a cable. Shared by
+/// `render_selection_highlight` (magenta) and `render_hover_highlight`
+/// (dimmer cyan) so the two stay visually consistent.
 fn draw_entity_outline(
     gizmos: &mut Gizmos,
     entity: Entity,
-    positioned: &Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
+    positioned: &FootprintQuery,
     cables: &Query<(Entity, &Cable)>,
     color: Color,
 ) {
-    if let Ok((transform, gate_kind)) = positioned.get(entity) {
-        let (local_offset, size) = match gate_kind {
-            Some(GateKind::And | GateKind::Or) => (
-                Vec2::new(0.0, GATE_BODY_ROW_OFFSET),
-                Vec2::new(GRID_CELL_SIZE, GRID_CELL_SIZE * 2.0),
-            ),
-            _ => (Vec2::ZERO, Vec2::splat(GRID_CELL_SIZE)),
+    if let Ok((transform, gate_kind, chip_instance)) = positioned.get(entity) {
+        let (local_offset, size) = if let Some(instance) = chip_instance {
+            chip_instance_bounds(instance)
+        } else {
+            match gate_kind {
+                Some(GateKind::And | GateKind::Or) => (
+                    Vec2::new(0.0, GATE_BODY_ROW_OFFSET),
+                    Vec2::new(GRID_CELL_SIZE, GRID_CELL_SIZE * 2.0),
+                ),
+                _ => (Vec2::ZERO, Vec2::splat(GRID_CELL_SIZE)),
+            }
         };
         let rotation = Rot2::radians(transform.rotation.to_scaled_axis().z);
         let center = transform.translation.truncate() + rotation * local_offset;
@@ -438,7 +482,7 @@ fn draw_entity_outline(
 pub fn render_selection_highlight(
     mode: Res<Mode>,
     selected: Res<Selected>,
-    positioned: Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
+    positioned: FootprintQuery,
     cables: Query<(Entity, &Cable)>,
     mut gizmos: Gizmos,
 ) {
@@ -470,7 +514,7 @@ pub fn render_hover_highlight(
     pointer: Res<PointerState>,
     camera_pan: Res<CameraPanState>,
     grid_positions: Query<(Entity, &GridPosition)>,
-    positioned: Query<(&Transform, Option<&GateKind>), With<GridPosition>>,
+    positioned: FootprintQuery,
     cables: Query<(Entity, &Cable)>,
     mut gizmos: Gizmos,
 ) {

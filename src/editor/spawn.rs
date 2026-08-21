@@ -522,6 +522,10 @@ pub fn spawn_placement_preview(
                 parent.spawn(label("PIN", Vec2::ZERO, label_color));
             });
         }
-        ToolKind::Cable => {}
+        // `preview.rs::sync_placement_preview` intercepts `ToolKind::Chip`
+        // before it ever reaches this function — a chip's ghost is a
+        // per-instance blueprint lookup this generic function has no access
+        // to (see `chip_instance::spawn_chip_instance_preview`).
+        ToolKind::Chip(_) | ToolKind::Cable => {}
     }
 }

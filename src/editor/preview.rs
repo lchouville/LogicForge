@@ -3,8 +3,10 @@ use bevy::prelude::*;
 use crate::constants::PREVIEW_ALPHA;
 use crate::grid::{cell_to_world, world_to_cell};
 
+use super::chip_instance::spawn_chip_instance_preview;
 use super::cursor::cursor_world_position;
 use super::hud::PointerOverUi;
+use super::project::ProjectLibrary;
 use super::resources::{ArmedTool, PendingRotation, ToolKind};
 use super::spawn::{facing_quat, spawn_placement_preview};
 
@@ -36,6 +38,7 @@ pub fn sync_placement_preview(
     armed: Res<ArmedTool>,
     rotation: Res<PendingRotation>,
     pointer_over_ui: Res<PointerOverUi>,
+    library: Res<ProjectLibrary>,
     window: Single<&Window>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut existing: Query<(Entity, &mut Transform), With<PlacementPreview>>,
@@ -57,13 +60,24 @@ pub fn sync_placement_preview(
         *last_tool = wanted_tool;
 
         if let (Some(tool), Some(world_pos)) = (wanted_tool, cursor_world) {
-            spawn_placement_preview(
-                &mut commands,
-                &asset_server,
-                tool,
-                world_to_cell(world_pos),
-                rotation.0,
-            );
+            let cell = world_to_cell(world_pos);
+            match tool {
+                ToolKind::Chip(source) => {
+                    if let Some((_, body_color, blocks)) = library.chip_blueprint(source) {
+                        spawn_chip_instance_preview(
+                            &mut commands,
+                            &asset_server,
+                            cell,
+                            rotation.0,
+                            body_color,
+                            &blocks,
+                        );
+                    }
+                }
+                _ => {
+                    spawn_placement_preview(&mut commands, &asset_server, tool, cell, rotation.0);
+                }
+            }
         }
         return;
     }

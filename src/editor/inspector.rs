@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::constants::{COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, LABEL_FONT_SIZE, UI_FONT_PATH};
 use crate::simulation::components::{GateKind, Lamp, Switch};
 
+use super::chip_instance::ChipInstance;
 use super::resources::{Mode, Selected};
 
 /// Fixed placeholder metadata shown for every native (built-in) component —
@@ -10,6 +11,12 @@ use super::resources::{Mode, Selected};
 /// (roadmap item 5) will eventually carry once players can author their own.
 const NATIVE_CREATOR: &str = "LogicForge";
 const NATIVE_CREATION_DATE: &str = "2026";
+
+/// Fixed description shown for every placed `ChipInstance` — a real
+/// per-chip description (left by its creator) isn't captured yet, only its
+/// name; see `ChipInstance`'s own doc comment for what's deferred.
+const CHIP_INSTANCE_DESCRIPTION: &str =
+    "Puce personnalisée créée par le joueur — voir son circuit intérieur pour le détail.";
 
 #[derive(Component)]
 pub struct InspectorPanel;
@@ -114,15 +121,18 @@ fn inspector_text_font(font: Handle<Font>) -> impl Bundle {
 
 /// Name + description shown for the selected component, or `None` for
 /// anything that isn't a placeable component (e.g. a selected `Cable`, which
-/// has no such identity to show).
+/// has no such identity to show). Returns owned `String`s rather than
+/// `&'static str` since a `ChipInstance`'s name is a runtime value (the
+/// project it copies), not a fixed literal like every native component's.
 fn selected_component_info(
     entity: Entity,
     gates: &Query<&GateKind>,
     switches: &Query<&Switch>,
     lamps: &Query<&Lamp>,
-) -> Option<(&'static str, &'static str)> {
+    chip_instances: &Query<&ChipInstance>,
+) -> Option<(String, String)> {
     if let Ok(kind) = gates.get(entity) {
-        return Some(match kind {
+        let (name, description) = match kind {
             GateKind::And => (
                 "AND",
                 "Porte logique ET : sort à 1 seulement si toutes ses entrées sont à 1.",
@@ -135,18 +145,25 @@ fn selected_component_info(
                 "NOT",
                 "Porte logique NON : inverse le signal reçu en entrée.",
             ),
-        });
+        };
+        return Some((name.to_string(), description.to_string()));
     }
     if switches.get(entity).is_ok() {
         return Some((
-            "Switch",
-            "Interrupteur : composant d'entrée activable/désactivable par le joueur.",
+            "Switch".to_string(),
+            "Interrupteur : composant d'entrée activable/désactivable par le joueur.".to_string(),
         ));
     }
     if lamps.get(entity).is_ok() {
         return Some((
-            "Lamp",
-            "Lampe : composant de sortie qui s'allume selon le signal reçu.",
+            "Lamp".to_string(),
+            "Lampe : composant de sortie qui s'allume selon le signal reçu.".to_string(),
+        ));
+    }
+    if let Ok(instance) = chip_instances.get(entity) {
+        return Some((
+            instance.display_name.clone(),
+            CHIP_INSTANCE_DESCRIPTION.to_string(),
         ));
     }
     None
@@ -188,6 +205,7 @@ pub fn sync_inspector_panel(
     gates: Query<&GateKind>,
     switches: Query<&Switch>,
     lamps: Query<&Lamp>,
+    chip_instances: Query<&ChipInstance>,
     mut panel: Query<&mut Node, With<InspectorPanel>>,
     mut name_text: Query<&mut Text, NameTextFilter>,
     mut description_text: Query<&mut Text, DescriptionTextFilter>,
@@ -203,7 +221,9 @@ pub fn sync_inspector_panel(
     let info = (*mode == Mode::Edit)
         .then_some(selected.0)
         .flatten()
-        .and_then(|entity| selected_component_info(entity, &gates, &switches, &lamps));
+        .and_then(|entity| {
+            selected_component_info(entity, &gates, &switches, &lamps, &chip_instances)
+        });
 
     let Some((name, description)) = info else {
         node.display = Display::None;

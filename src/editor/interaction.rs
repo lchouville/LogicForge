@@ -7,6 +7,7 @@ use crate::simulation::components::{GridPosition, SignalValue, Switch};
 use super::hud::PointerOverUi;
 use super::placement::{pick_entity_at_cell, place_tool};
 use super::pointer::PointerState;
+use super::project::ProjectLibrary;
 use super::resources::{
     ArmedTool, InteractionState, Mode, PendingRotation, PickCycleState, SpawnOrderCounter, ToolKind,
 };
@@ -24,6 +25,7 @@ pub fn handle_left_click_start(
     mut interaction: ResMut<InteractionState>,
     mut spawn_order: ResMut<SpawnOrderCounter>,
     mut cycle: ResMut<PickCycleState>,
+    library: Res<ProjectLibrary>,
     mut switches: Query<(Entity, &GridPosition, &mut Switch, &Children)>,
     mut signals: Query<&mut SignalValue>,
 ) {
@@ -45,7 +47,15 @@ pub fn handle_left_click_start(
         } else {
             let z = spawn_order.0;
             spawn_order.0 += SPAWN_Z_STEP;
-            place_tool(&mut commands, &asset_server, tool, cell, rotation.0, z);
+            place_tool(
+                &mut commands,
+                &asset_server,
+                &library,
+                tool,
+                cell,
+                rotation.0,
+                z,
+            );
             armed.0 = None;
             rotation.0 = 0;
         }

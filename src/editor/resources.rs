@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::simulation::components::GateKind;
 
 use super::pin_header::PinHeaderLabelFocus;
+use super::project::ProjectId;
 use super::wiring::CableEnd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +13,10 @@ pub enum ToolKind {
     Lamp,
     Cable,
     Pin,
+    /// A placed copy of another project's structure — see
+    /// `chip_instance::ChipInstance`. Carries which project to copy from,
+    /// resolved to a frozen blueprint only at actual placement time.
+    Chip(ProjectId),
 }
 
 /// The component the player has armed via a number key. `None` means
