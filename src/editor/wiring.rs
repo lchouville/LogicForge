@@ -4,6 +4,8 @@ use crate::constants::{CABLE_BODY_HIT_DISTANCE, CABLE_ENDPOINT_HIT_RADIUS};
 use crate::grid::cell_to_world;
 use crate::simulation::components::Cable;
 
+use super::chip_instance::ChipBridgeCable;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CableEnd {
     Start,
@@ -31,10 +33,13 @@ pub fn distance_to_segment(point: Vec2, a: Vec2, b: Vec2) -> f32 {
 /// one of its two endpoints (within `CABLE_ENDPOINT_HIT_RADIUS`, checked
 /// first so an endpoint near the body still grabs the endpoint) or its body
 /// (within `CABLE_BODY_HIT_DISTANCE`), so Edit mode can tell a whole-cable
-/// move from an endpoint reshape.
+/// move from an endpoint reshape. `Without<ChipBridgeCable>`: a placed
+/// chip's internal exterior-to-interior link is never something the player
+/// drew, and may span thousands of cells to a private simulation space, so
+/// it must never be selectable/draggable/deletable here.
 pub fn find_cable_at(
     world_pos: Vec2,
-    cables: &Query<(Entity, &Cable)>,
+    cables: &Query<(Entity, &Cable), Without<ChipBridgeCable>>,
 ) -> Option<(Entity, CableHit)> {
     cables
         .iter()

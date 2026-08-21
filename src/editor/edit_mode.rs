@@ -8,7 +8,7 @@ use crate::grid::{cell_to_world, world_to_cell};
 use crate::simulation::components::{Cable, GateKind, GridPosition};
 
 use super::camera_control::CameraPanState;
-use super::chip_instance::ChipInstance;
+use super::chip_instance::{ChipBridgeCable, ChipInstance};
 use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
 use super::pin_header::PinHeaderLabelFocus;
 use super::placement::pick_entity_at_cell;
@@ -80,7 +80,7 @@ pub fn handle_edit_click_start(
     mut cycle: ResMut<PickCycleState>,
     mut selected: ResMut<Selected>,
     positions: Query<(Entity, &GridPosition)>,
-    cables: Query<(Entity, &Cable)>,
+    cables: Query<(Entity, &Cable), Without<ChipBridgeCable>>,
 ) {
     if *mode != Mode::Edit || armed.0.is_some() || pointer_over_ui.0 || !pointer.just_pressed {
         return;
@@ -140,7 +140,7 @@ pub fn handle_edit_drag(
     pointer: Res<PointerState>,
     mut drag: ResMut<EditDragState>,
     mut positioned: Query<(&mut GridPosition, &mut Transform)>,
-    mut cables: Query<&mut Cable>,
+    mut cables: Query<&mut Cable, Without<ChipBridgeCable>>,
 ) {
     if *mode != Mode::Edit || !pointer.pressed {
         return;
@@ -295,7 +295,7 @@ pub fn handle_selected_rotation(
     rotate_button: Query<&Interaction, (Changed<Interaction>, With<RotateButton>)>,
     mut drag: ResMut<EditDragState>,
     mut positioned: Query<&mut Transform, With<GridPosition>>,
-    mut cables: Query<&mut Cable>,
+    mut cables: Query<&mut Cable, Without<ChipBridgeCable>>,
 ) {
     if *mode != Mode::Edit || armed.0.is_some() {
         return;
@@ -443,7 +443,7 @@ fn draw_entity_outline(
     gizmos: &mut Gizmos,
     entity: Entity,
     positioned: &FootprintQuery,
-    cables: &Query<(Entity, &Cable)>,
+    cables: &Query<(Entity, &Cable), Without<ChipBridgeCable>>,
     color: Color,
 ) {
     if let Ok((transform, gate_kind, chip_instance)) = positioned.get(entity) {
@@ -483,7 +483,7 @@ pub fn render_selection_highlight(
     mode: Res<Mode>,
     selected: Res<Selected>,
     positioned: FootprintQuery,
-    cables: Query<(Entity, &Cable)>,
+    cables: Query<(Entity, &Cable), Without<ChipBridgeCable>>,
     mut gizmos: Gizmos,
 ) {
     if *mode != Mode::Edit {
@@ -515,7 +515,7 @@ pub fn render_hover_highlight(
     camera_pan: Res<CameraPanState>,
     grid_positions: Query<(Entity, &GridPosition)>,
     positioned: FootprintQuery,
-    cables: Query<(Entity, &Cable)>,
+    cables: Query<(Entity, &Cable), Without<ChipBridgeCable>>,
     mut gizmos: Gizmos,
 ) {
     if *mode != Mode::Edit

@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::constants::{CHIP_INTERIOR_INSTANCE_STRIDE_CELLS, CHIP_INTERIOR_SPACE_OFFSET};
+use crate::grid::world_to_cell;
 use crate::simulation::components::GateKind;
 
 use super::pin_header::PinHeaderLabelFocus;
@@ -101,6 +103,26 @@ pub struct PickCycleState {
 #[derive(Resource, Default)]
 pub struct SpawnOrderCounter(pub f32);
 
+/// Hands out non-colliding cell offsets, one per placed `ChipInstance` that
+/// actually has an interior circuit to simulate (see
+/// `chip_instance::spawn_chip_instance`) — a flat, ever-increasing counter,
+/// never reused even after a chip is deleted, never partitioned by nesting
+/// depth (a recursively-nested chip's own private interior just gets the
+/// next slot in the same sequence). Trading a little unreclaimed cell-space
+/// over a session's lifetime for zero risk of two instances' interior
+/// circuits ever sharing a cell.
+#[derive(Resource, Default)]
+pub struct ChipInstanceSlotAllocator(u32);
+
+impl ChipInstanceSlotAllocator {
+    pub fn allocate(&mut self) -> IVec2 {
+        let slot = self.0;
+        self.0 += 1;
+        world_to_cell(CHIP_INTERIOR_SPACE_OFFSET)
+            + IVec2::new(slot as i32 * CHIP_INTERIOR_INSTANCE_STRIDE_CELLS, 0)
+    }
+}
+
 /// Bundles every piece of transient editor-interaction state into one
 /// `SystemParam` — `reset_transient_editor_state`/`project::switch_to_project`
 /// both need write access to all of it at once, and spelling out six separate
@@ -119,4 +141,9 @@ pub struct TransientEditorState<'w> {
     /// entity is despawned by a project switch — same reasoning as
     /// `selected` above.
     pub pin_header_label_focus: ResMut<'w, PinHeaderLabelFocus>,
+    /// `project::switch_to_project`'s respawn loop needs to hand out a fresh
+    /// interior-circuit slot for every placed chip it respawns that actually
+    /// has one — same global allocator `placement::place_tool` draws from at
+    /// fresh-placement time (see `ChipInstanceSlotAllocator`).
+    pub chip_slots: ResMut<'w, ChipInstanceSlotAllocator>,
 }

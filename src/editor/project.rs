@@ -13,7 +13,7 @@ use super::chip_structure::{
 };
 use super::chip_view::PreChipEditCamera;
 use super::edit_mode::reset_transient_editor_state;
-use super::resources::TransientEditorState;
+use super::resources::{ChipInstanceSlotAllocator, TransientEditorState};
 use super::spawn::{
     rotation_from_transform, spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_pin_header,
     spawn_switch,
@@ -35,10 +35,13 @@ pub type ChipBlueprint = (String, Color, Vec<(IVec2, StructureBlockKind, String)
 
 /// A placed circuit entity, captured just enough to respawn it identically
 /// via the same `spawn_*` functions used for live placement — see
-/// `switch_to_project`. Deliberately not `#[derive(Serialize)]`: this never
-/// leaves memory, so plain Rust data is enough (every field here is already
-/// `Copy` on its source component).
-enum SavedEntity {
+/// `switch_to_project`/`spawn_saved_entity`. Deliberately not
+/// `#[derive(Serialize)]`: this never leaves memory, so plain Rust data is
+/// enough. `pub(crate)` (not private) and `Clone`: `chip_instance.rs` needs
+/// to name this type for `ChipInstance::interior` and clone entries out of
+/// it when spawning a placed chip's private interior circuit.
+#[derive(Clone)]
+pub(crate) enum SavedEntity {
     AndOrGate {
         kind: GateKind,
         cell: IVec2,
@@ -69,6 +72,9 @@ enum SavedEntity {
         display_name: String,
         body_color: Color,
         blocks: Vec<(IVec2, StructureBlockKind, String)>,
+        /// The source project's own interior circuit, frozen at the moment
+        /// *this* chip was placed — see `ChipInstance::interior`.
+        interior: Vec<SavedEntity>,
     },
     Cable {
         start: IVec2,
@@ -182,6 +188,21 @@ impl ProjectLibrary {
             .map(|block| (block.cell, block.kind, block.label.clone()))
             .collect();
         Some((display_name, body_color, blocks))
+    }
+
+    /// `id`'s own interior circuit (gates/switches/lamps/`PinHeader`s/cables),
+    /// frozen at whatever state it was last parked in — the counterpart to
+    /// `chip_blueprint` that actually lets a placed chip *simulate*, not just
+    /// look right (see `chip_instance::spawn_chip_instance`). Empty if `id`
+    /// was never visited (same precondition as `chip_blueprint`; a project
+    /// that's never been visited can't have a saved interior at all). Empty
+    /// is a safe default here — it just means the placed chip's sockets stay
+    /// unlinked passthroughs, same as before this circuit existed.
+    pub fn chip_interior(&self, id: ProjectId) -> Vec<SavedEntity> {
+        self.data
+            .get(&id)
+            .map(|data| data.entities.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -357,6 +378,7 @@ pub fn switch_to_project(
             display_name: instance.display_name.clone(),
             body_color: instance.body_color,
             blocks: instance.blocks.clone(),
+            interior: instance.interior.clone(),
         });
     }
     for cable in circuit.cables.iter() {
@@ -390,61 +412,14 @@ pub fn switch_to_project(
     state.spawn_order.0 = 0.0;
     let incoming = library.data.remove(&target).unwrap_or_default();
     for saved in &incoming.entities {
-        let z = state.spawn_order.0;
-        state.spawn_order.0 += SPAWN_Z_STEP;
-        match *saved {
-            SavedEntity::AndOrGate {
-                kind,
-                cell,
-                rotation,
-            } => {
-                spawn_and_or_gate(commands, asset_server, cell, kind, rotation, z);
-            }
-            SavedEntity::NotGate { cell, rotation } => {
-                spawn_not_gate(commands, asset_server, cell, rotation, z);
-            }
-            SavedEntity::Switch { cell, rotation, on } => {
-                let entity = spawn_switch(commands, asset_server, cell, rotation, z);
-                if on {
-                    commands.entity(entity).insert(Switch { on: true });
-                }
-            }
-            SavedEntity::Lamp { cell, rotation } => {
-                spawn_lamp(commands, asset_server, cell, rotation, z);
-            }
-            SavedEntity::Pin {
-                cell,
-                rotation,
-                ref label,
-            } => {
-                spawn_pin_header(commands, asset_server, cell, rotation, label, z);
-            }
-            SavedEntity::Chip {
-                cell,
-                rotation,
-                source,
-                ref display_name,
-                body_color,
-                ref blocks,
-            } => {
-                spawn_chip_instance(
-                    commands,
-                    asset_server,
-                    cell,
-                    rotation,
-                    ChipInstance {
-                        source,
-                        display_name: display_name.clone(),
-                        body_color,
-                        blocks: blocks.clone(),
-                    },
-                    z,
-                );
-            }
-            SavedEntity::Cable { start, end } => {
-                spawn_cable(commands, asset_server, start, end);
-            }
-        }
+        spawn_saved_entity(
+            commands,
+            asset_server,
+            saved,
+            IVec2::ZERO,
+            &mut state.spawn_order.0,
+            &mut state.chip_slots,
+        );
     }
     customization.color.0 = incoming
         .structure_color
@@ -497,6 +472,112 @@ pub fn switch_to_project(
     *view_switch.camera_pan = CameraPanState::Idle;
     *view_switch.pinch = PinchState::default();
     view_switch.pin_label_focus.0 = false;
+}
+
+/// Spawns one saved circuit entity via the same `spawn_*` functions used for
+/// live placement, translated by `cell_offset` — `IVec2::ZERO` for
+/// `switch_to_project`'s own top-level respawn loop above (entities parked
+/// at project-root level are never nested), or a placed chip's allocated
+/// interior slot when respawning its private, actually-simulated interior
+/// circuit (see `chip_instance::spawn_chip_instance`). `z` is a running
+/// z-order counter the caller owns and advances by `SPAWN_Z_STEP` on every
+/// call, same convention as every other placement path in this codebase.
+/// Recurses into `chip_instance::spawn_chip_instance` for a nested
+/// `SavedEntity::Chip`, which is what lets a placed chip's own placed chips
+/// simulate too, however deep the nesting goes — see
+/// `SavedEntity::Chip::interior`'s doc comment for why this can never cycle.
+pub(crate) fn spawn_saved_entity(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    saved: &SavedEntity,
+    cell_offset: IVec2,
+    z: &mut f32,
+    slots: &mut ChipInstanceSlotAllocator,
+) -> Entity {
+    let this_z = *z;
+    *z += SPAWN_Z_STEP;
+    match saved {
+        SavedEntity::AndOrGate {
+            kind,
+            cell,
+            rotation,
+        } => spawn_and_or_gate(
+            commands,
+            asset_server,
+            *cell + cell_offset,
+            *kind,
+            *rotation,
+            this_z,
+        ),
+        SavedEntity::NotGate { cell, rotation } => spawn_not_gate(
+            commands,
+            asset_server,
+            *cell + cell_offset,
+            *rotation,
+            this_z,
+        ),
+        SavedEntity::Switch { cell, rotation, on } => {
+            let entity = spawn_switch(
+                commands,
+                asset_server,
+                *cell + cell_offset,
+                *rotation,
+                this_z,
+            );
+            if *on {
+                commands.entity(entity).insert(Switch { on: true });
+            }
+            entity
+        }
+        SavedEntity::Lamp { cell, rotation } => spawn_lamp(
+            commands,
+            asset_server,
+            *cell + cell_offset,
+            *rotation,
+            this_z,
+        ),
+        SavedEntity::Pin {
+            cell,
+            rotation,
+            label,
+        } => spawn_pin_header(
+            commands,
+            asset_server,
+            *cell + cell_offset,
+            *rotation,
+            label,
+            this_z,
+        ),
+        SavedEntity::Chip {
+            cell,
+            rotation,
+            source,
+            display_name,
+            body_color,
+            blocks,
+            interior,
+        } => spawn_chip_instance(
+            commands,
+            asset_server,
+            *cell + cell_offset,
+            *rotation,
+            ChipInstance {
+                source: *source,
+                display_name: display_name.clone(),
+                body_color: *body_color,
+                blocks: blocks.clone(),
+                interior: interior.clone(),
+            },
+            this_z,
+            slots,
+        ),
+        SavedEntity::Cable { start, end } => spawn_cable(
+            commands,
+            asset_server,
+            *start + cell_offset,
+            *end + cell_offset,
+        ),
+    }
 }
 
 fn orthographic_scale(projection: &Projection) -> f32 {

@@ -4,7 +4,9 @@ use crate::simulation::components::GateKind;
 
 use super::chip_instance::{ChipInstance, spawn_chip_instance};
 use super::project::ProjectLibrary;
-use super::resources::{ArmedTool, PendingRotation, PickCycleState, ToolKind};
+use super::resources::{
+    ArmedTool, ChipInstanceSlotAllocator, PendingRotation, PickCycleState, ToolKind,
+};
 use super::spawn::{spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_pin_header, spawn_switch};
 
 pub fn handle_tool_arming(
@@ -95,6 +97,7 @@ pub fn place_tool(
     cell: IVec2,
     rotation: u8,
     z: f32,
+    slots: &mut ChipInstanceSlotAllocator,
 ) {
     match tool {
         ToolKind::Gate(GateKind::And) => {
@@ -121,6 +124,7 @@ pub fn place_tool(
             // no-op, same as clicking an already-occupied cell with another
             // tool armed.
             if let Some((display_name, body_color, blocks)) = library.chip_blueprint(source) {
+                let interior = library.chip_interior(source);
                 spawn_chip_instance(
                     commands,
                     asset_server,
@@ -131,8 +135,10 @@ pub fn place_tool(
                         display_name,
                         body_color,
                         blocks,
+                        interior,
                     },
                     z,
+                    slots,
                 );
             }
         }

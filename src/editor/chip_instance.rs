@@ -2,36 +2,79 @@ use bevy::prelude::*;
 
 use crate::constants::{
     COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, COLOR_CHIP_SOCKET_LIT, COLOR_NEUTRAL,
-    COLOR_STRUCTURE_LAMP, LABEL_FONT_SIZE, PREVIEW_Z, UI_FONT_PATH,
+    COLOR_STRUCTURE_LAMP, GRID_CELL_SIZE, LABEL_FONT_SIZE, PREVIEW_Z, UI_FONT_PATH,
 };
-use crate::grid::cell_to_world;
+use crate::grid::{cell_to_world, world_to_cell};
 use crate::rendering::appearance::PendingAppearance;
-use crate::simulation::components::{GridPosition, Pin, PinRole, SignalValue};
+use crate::simulation::components::{Cable, GridPosition, Pin, PinRole, SignalValue};
 use crate::simulation::logic::{LogicState, read_logic};
 
 use super::chip_structure::{StructureBlockKind, StructurePinLabel};
 use super::hud::StandardEditorUi;
 use super::preview::{PlacementPreview, PlacementPreviewTint};
-use super::project::{ProjectId, ProjectLibrary};
-use super::resources::{ArmedTool, ToolKind};
+use super::project::{ProjectId, ProjectLibrary, SavedEntity, spawn_saved_entity};
+use super::resources::{ArmedTool, ChipInstanceSlotAllocator, ToolKind};
 use super::spawn::{facing_quat, placeholder_sprite};
 
 /// A placed copy of another project's structure ("puce"), frozen at the
-/// moment of placement — see `ProjectLibrary::chip_blueprint`. Its Pin/Lamp
-/// blocks are real, cable-connectable net-resolution participants (see
-/// `spawn_chip_instance`); the chip's own interior circuit doesn't actually
-/// simulate yet — that's the follow-up chantier this lays groundwork for.
-/// `blocks` (including each Pin/Lamp's label, for that future pairing)
-/// carries just enough to redraw itself and to persist/respawn without ever
-/// looking `source` back up in `ProjectLibrary` again, so a later
-/// rename/deletion of the source project can't desync or break an
-/// already-placed instance.
+/// moment of placement — see `ProjectLibrary::chip_blueprint`/`chip_interior`.
+/// Its Pin/Lamp blocks are real, cable-connectable net-resolution
+/// participants (see `spawn_chip_instance`), and — since `interior` below —
+/// its own interior circuit genuinely simulates too. `blocks`/`interior`
+/// carry just enough to redraw and respawn without ever looking `source`
+/// back up in `ProjectLibrary` again, so a later rename/deletion of the
+/// source project can't desync or break an already-placed instance.
 #[derive(Component, Clone)]
 pub struct ChipInstance {
     pub source: ProjectId,
     pub display_name: String,
     pub body_color: Color,
     pub blocks: Vec<(IVec2, StructureBlockKind, String)>,
+    /// The source project's own interior circuit (gates/switches/lamps/
+    /// `PinHeader`s/cables — and possibly further nested `ChipInstance`s of
+    /// its own), frozen at the moment *this* chip was placed — see
+    /// `ProjectLibrary::chip_interior`. Empty means "nothing to simulate",
+    /// which `spawn_chip_instance` treats as a plain no-op (the exact
+    /// pre-nested-simulation behavior). A nested `SavedEntity::Chip` in here
+    /// always carries its own already-resolved `interior` in turn (it was
+    /// frozen when *it* was placed), so a single `.clone()` of this field is
+    /// enough to carry arbitrarily deep nesting — no recursive resolution
+    /// needed at spawn time, and no cycle is possible: placing project A
+    /// inside project B requires A to be visited-and-non-active (hence
+    /// already frozen at that moment), so any apparent A-in-B-in-A nesting
+    /// is really just snapshots taken at different times, never a live loop.
+    pub interior: Vec<SavedEntity>,
+}
+
+/// Marks a `Cable` as an internal, invisible link between a placed chip's
+/// exterior Pin/Lamp socket and the matching-label `PinHeader` in its
+/// private interior circuit (see `spawn_chip_instance`) — not a wire the
+/// player ever drew. Carries no `Transform`/`Children`/`Sprite`, so
+/// `rendering::cable::rebuild_cable_segments`/`sync_cable_sprite` (both
+/// require `&Children`) already skip it for free; this marker exists to
+/// also defensively exclude it from cable selection/drag/deletion queries
+/// (`wiring::find_cable_at`, `edit_mode.rs`), so the player can never select
+/// or delete a bridge that might span thousands of grid cells to a chip's
+/// private simulation space.
+#[derive(Component)]
+pub(crate) struct ChipBridgeCable;
+
+/// The absolute grid cell a local offset (already the same units
+/// `cell_to_world` produces, e.g. `cell_to_world(local_cell)` or a fixed
+/// pin-lead offset like `spawn_pin_header`'s own `Vec2::new(GRID_CELL_SIZE,
+/// 0.0)`) resolves to once `root_world`/`rotation` are applied — the exact
+/// math Bevy's own transform propagation would produce for a one-level-deep
+/// child, just computed synchronously so a bridge `Cable`'s `start`/`end`
+/// can be baked in at spawn time instead of waiting a frame for
+/// `GlobalTransform` to catch up.
+fn absolute_cell(root_world: Vec2, rotation: u8, local_offset: Vec2) -> IVec2 {
+    let transform =
+        Transform::from_translation(root_world.extend(0.0)).with_rotation(facing_quat(rotation));
+    world_to_cell(
+        transform
+            .transform_point(local_offset.extend(0.0))
+            .truncate(),
+    )
 }
 
 /// Marks a placed `ChipInstance`'s Pin/Lamp socket for
@@ -61,10 +104,29 @@ pub fn spawn_chip_instance(
     rotation: u8,
     instance: ChipInstance,
     z: f32,
+    slots: &mut ChipInstanceSlotAllocator,
 ) -> Entity {
     let world = cell_to_world(cell);
     let blocks = instance.blocks.clone();
     let body_color = instance.body_color;
+    let interior = instance.interior.clone();
+    // Exterior socket absolute cells, keyed by label — computed once here
+    // (before `instance` moves into `commands.spawn` below) so the
+    // bridge-wiring pass after the interior spawn doesn't need to redo this
+    // per candidate. A block with no label, or a Corps, never appears here
+    // and so can never gain a bridge — exactly today's behavior.
+    let exterior_sockets: Vec<(String, IVec2)> = blocks
+        .iter()
+        .filter(|(_, kind, label)| {
+            matches!(kind, StructureBlockKind::Pin | StructureBlockKind::Lamp) && !label.is_empty()
+        })
+        .map(|(local_cell, _, label)| {
+            (
+                label.clone(),
+                absolute_cell(world, rotation, cell_to_world(*local_cell)),
+            )
+        })
+        .collect();
     let mut root = commands.spawn((
         instance,
         GridPosition(cell),
@@ -180,7 +242,75 @@ pub fn spawn_chip_instance(
             }
         }
     });
-    root.id()
+    let root_entity = root.id();
+
+    // Spawn a private, translated copy of the source project's own interior
+    // circuit — see `ChipInstanceSlotAllocator`'s doc comment for why a
+    // fresh, never-reused offset here is enough to guarantee it never
+    // collides with any other placed chip's own private circuit, at any
+    // nesting depth. Empty `interior` (no source circuit, or a chip placed
+    // before this chantier's data existed) is a no-op — same shell-only
+    // behavior as before nested simulation existed.
+    if !interior.is_empty() {
+        let interior_offset = slots.allocate();
+        let mut interior_z = 0.0_f32;
+        for saved in &interior {
+            spawn_saved_entity(
+                commands,
+                asset_server,
+                saved,
+                interior_offset,
+                &mut interior_z,
+                slots,
+            );
+        }
+        // Bridge every exterior Pin/Lamp socket to the interior `PinHeader`
+        // sharing its label (the same match `chip_structure`/`pin_header`'s
+        // "Lié" indicator already computes for display) with one bare,
+        // invisible `Cable` — see `ChipBridgeCable`'s doc comment for why
+        // this needs no `Transform`/`Sprite`/`Children` despite potentially
+        // spanning thousands of cells to the interior's private space.
+        for saved in &interior {
+            let SavedEntity::Pin {
+                cell: pin_cell,
+                rotation: pin_rotation,
+                label,
+            } = saved
+            else {
+                continue;
+            };
+            if label.is_empty() {
+                continue;
+            }
+            let Some((_, exterior_cell)) = exterior_sockets
+                .iter()
+                .find(|(candidate, _)| candidate == label)
+            else {
+                continue;
+            };
+            let interior_world = cell_to_world(*pin_cell + interior_offset);
+            // `spawn_pin_header`'s own single pin child sits one full cell
+            // to the right of its own root (`Vec2::new(GRID_CELL_SIZE,
+            // 0.0)` in `src/editor/spawn.rs`) — reproduced here since a
+            // `PinHeader`'s electrical cell is that pin's cell, not its
+            // root's.
+            let interior_cell = absolute_cell(
+                interior_world,
+                *pin_rotation,
+                Vec2::new(GRID_CELL_SIZE, 0.0),
+            );
+            commands.spawn((
+                Cable {
+                    start: *exterior_cell,
+                    end: interior_cell,
+                },
+                SignalValue::default(),
+                ChipBridgeCable,
+            ));
+        }
+    }
+
+    root_entity
 }
 
 /// Tints every placed `ChipInstance`'s Pin/Lamp socket white when it carries

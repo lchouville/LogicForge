@@ -9,7 +9,8 @@ use super::placement::{pick_entity_at_cell, place_tool};
 use super::pointer::PointerState;
 use super::project::ProjectLibrary;
 use super::resources::{
-    ArmedTool, InteractionState, Mode, PendingRotation, PickCycleState, SpawnOrderCounter, ToolKind,
+    ArmedTool, ChipInstanceSlotAllocator, InteractionState, Mode, PendingRotation, PickCycleState,
+    SpawnOrderCounter, ToolKind,
 };
 use crate::rendering::cable::spawn_cable;
 
@@ -26,6 +27,7 @@ pub fn handle_left_click_start(
     mut spawn_order: ResMut<SpawnOrderCounter>,
     mut cycle: ResMut<PickCycleState>,
     library: Res<ProjectLibrary>,
+    mut chip_slots: ResMut<ChipInstanceSlotAllocator>,
     mut switches: Query<(Entity, &GridPosition, &mut Switch, &Children)>,
     mut signals: Query<&mut SignalValue>,
 ) {
@@ -55,6 +57,7 @@ pub fn handle_left_click_start(
                 cell,
                 rotation.0,
                 z,
+                &mut chip_slots,
             );
             armed.0 = None;
             rotation.0 = 0;

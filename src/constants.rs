@@ -53,6 +53,23 @@ pub const SIDEBAR_WIDTH: f32 = 200.0;
 /// structure block used to render visibly off the background grid's node
 /// icons until this was caught.
 pub const STRUCTURE_SPACE_OFFSET: Vec2 = Vec2::new(GRID_CELL_SIZE * 2_084.0, 0.0);
+/// World-space region where every placed `ChipInstance`'s private, actually-
+/// simulated copy of its source project's interior circuit lives (see
+/// `editor::chip_instance::ChipInstanceSlotAllocator`) — on the **Y** axis,
+/// deliberately distinct from `STRUCTURE_SPACE_OFFSET`'s X axis, so the two
+/// "parked far away" regions can never alias each other even if one offset
+/// is later tuned. Same reasoning as `STRUCTURE_SPACE_OFFSET` for staying a
+/// whole multiple of `GRID_CELL_SIZE`: keeps every nested circuit grid-
+/// aligned with the background grid.
+pub const CHIP_INTERIOR_SPACE_OFFSET: Vec2 = Vec2::new(0.0, GRID_CELL_SIZE * 4_096.0);
+/// Cell-space stride between two consecutive placed instances' private
+/// interior-circuit slots (`ChipInstanceSlotAllocator`) — generous enough
+/// that a reasonably-sized source circuit never spills into its neighbor's
+/// slot. Allocation is a flat, ever-increasing counter (never reused, never
+/// reset, not partitioned by nesting depth), so this same stride also
+/// separates a recursively-nested chip's own slot from every other slot,
+/// regardless of how deep it's nested.
+pub const CHIP_INTERIOR_INSTANCE_STRIDE_CELLS: i32 = 512;
 /// How close (in pixels) a click must land to a cable's line to select its
 /// body (as opposed to one of its endpoints) in Edit mode.
 pub const CABLE_BODY_HIT_DISTANCE: f32 = 6.0;

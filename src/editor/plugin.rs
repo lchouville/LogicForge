@@ -50,8 +50,8 @@ use super::pointer::{ActiveTouch, PointerState, update_pointer_state};
 use super::preview::{sync_placement_preview, tint_placement_preview};
 use super::project::{ProjectView, init_project_library};
 use super::resources::{
-    ArmedTool, EditDragState, InteractionState, Mode, PendingRotation, PickCycleState, Selected,
-    SpawnOrderCounter,
+    ArmedTool, ChipInstanceSlotAllocator, EditDragState, InteractionState, Mode, PendingRotation,
+    PickCycleState, Selected, SpawnOrderCounter,
 };
 use super::sidebar::{
     SidebarOpen, handle_project_selection, handle_sidebar_toggle_click, spawn_sidebar,
@@ -88,6 +88,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<StructurePinLabelFocus>()
             .init_resource::<PinHeaderLabelFocus>()
             .init_resource::<ChipPickerOpen>()
+            .init_resource::<ChipInstanceSlotAllocator>()
             .add_systems(
                 Startup,
                 (

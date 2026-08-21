@@ -8,6 +8,7 @@ use crate::constants::{
 use crate::grid::world_to_cell;
 use crate::simulation::components::{Cable, GridPosition};
 
+use super::chip_instance::ChipBridgeCable;
 use super::hud::PointerOverUi;
 use super::pointer::PointerState;
 use super::resources::ArmedTool;
@@ -86,7 +87,7 @@ pub struct PinchState(Option<PinchAnchor>);
 fn is_occupied(
     world_pos: Vec2,
     positions: &Query<&GridPosition>,
-    cables: &Query<(Entity, &Cable)>,
+    cables: &Query<(Entity, &Cable), Without<ChipBridgeCable>>,
 ) -> bool {
     let cell = world_to_cell(world_pos);
     positions.iter().any(|position| position.0 == cell)
@@ -119,7 +120,7 @@ pub fn handle_camera_pan(
     armed: Res<ArmedTool>,
     pointer_over_ui: Res<PointerOverUi>,
     positions: Query<&GridPosition>,
-    cables: Query<(Entity, &Cable)>,
+    cables: Query<(Entity, &Cable), Without<ChipBridgeCable>>,
     mut pan: ResMut<CameraPanState>,
     camera_query: Single<(&Camera, &GlobalTransform, &mut Transform), With<Camera2d>>,
 ) {
