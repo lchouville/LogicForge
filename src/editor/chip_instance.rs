@@ -2,14 +2,15 @@ use bevy::prelude::*;
 
 use crate::constants::{
     COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, COLOR_CHIP_SOCKET_LIT, COLOR_NEUTRAL,
-    COLOR_STRUCTURE_LAMP, GRID_CELL_SIZE, LABEL_FONT_SIZE, PREVIEW_Z, UI_FONT_PATH,
+    COLOR_STRUCTURE_LAMP, GRID_CELL_SIZE, LABEL_FONT_SIZE, PIN_LABEL_FONT_SIZE, PREVIEW_Z,
+    UI_FONT_PATH,
 };
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::rendering::appearance::PendingAppearance;
 use crate::simulation::components::{Cable, GridPosition, Pin, PinRole, SignalValue};
 use crate::simulation::logic::{LogicState, read_logic};
 
-use super::chip_structure::{StructureBlockKind, StructurePinLabel};
+use super::chip_structure::{StructureBlockKind, StructurePinLabel, pin_label_anchor};
 use super::hud::StandardEditorUi;
 use super::preview::{PlacementPreview, PlacementPreviewTint};
 use super::project::{ProjectId, ProjectLibrary, SavedEntity, spawn_saved_entity};
@@ -240,6 +241,34 @@ pub fn spawn_chip_instance(
                     Transform::from_translation(mid_local.extend(-0.05)).with_rotation(rotation),
                 ));
             }
+        }
+
+        // Each Pin/Lamp's own label, in world space at its entry point on
+        // the body — same `pin_label_anchor` used by the structure editor's
+        // own reactive `sync_structure_pin_label_text`, just computed once
+        // here for the same frozen-at-placement reason as the legs above.
+        // Counter-rotated by `facing_quat(rotation)`'s inverse so the text
+        // always reads upright on screen regardless of how the chip itself
+        // was placed/rotated.
+        let label_font = asset_server.load(UI_FONT_PATH);
+        let upright = facing_quat(rotation).inverse();
+        for (cell, kind, label) in &blocks {
+            if !matches!(kind, StructureBlockKind::Pin | StructureBlockKind::Lamp)
+                || label.is_empty()
+            {
+                continue;
+            }
+            let anchor = pin_label_anchor(*cell, &attach_cells);
+            parent.spawn((
+                Text2d::new(label.clone()),
+                TextFont {
+                    font: label_font.clone().into(),
+                    font_size: PIN_LABEL_FONT_SIZE.into(),
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                Transform::from_translation(anchor.extend(0.05)).with_rotation(upright),
+            ));
         }
     });
     let root_entity = root.id();

@@ -5,8 +5,8 @@ use bevy::prelude::*;
 use crate::constants::{
     COLOR_BUTTON_ARMED, COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, COLOR_HOVER, COLOR_NEUTRAL,
     COLOR_SELECTION, COLOR_STRUCTURE_LAMP, EDIT_DRAG_THRESHOLD, GRID_CELL_SIZE, LABEL_FONT_SIZE,
-    SELECTION_OUTLINE_MARGIN, SPAWN_Z_STEP, STRUCTURE_COLOR_PALETTE, STRUCTURE_SPACE_OFFSET,
-    UI_FONT_PATH,
+    PIN_LABEL_FONT_SIZE, SELECTION_OUTLINE_MARGIN, SPAWN_Z_STEP, STRUCTURE_COLOR_PALETTE,
+    STRUCTURE_SPACE_OFFSET, UI_FONT_PATH,
 };
 use crate::grid::{cell_to_world, world_to_cell};
 use crate::rendering::appearance::PendingAppearance;
@@ -510,6 +510,44 @@ pub fn sync_structure_color(
 #[derive(Component)]
 pub(crate) struct StructurePinLeg;
 
+/// The four orthogonal directions a Pin/Lamp block checks for an adjacent
+/// Corps/Lampe to attach to — shared by `sync_structure_pin_legs` (leg
+/// sprite placement) and `pin_label_anchor` (label text placement), since
+/// both need the exact same "what's this block attached to" answer.
+const NEIGHBOR_OFFSETS: [IVec2; 4] = [
+    IVec2::new(1, 0),
+    IVec2::new(-1, 0),
+    IVec2::new(0, 1),
+    IVec2::new(0, -1),
+];
+
+/// World position (before `STRUCTURE_SPACE_OFFSET`) where a Pin/Lamp's own
+/// label text should sit: the midpoint with whichever orthogonally-adjacent
+/// Corps/Lampe block it's attached to — the same point `sync_structure_pin_legs`
+/// already anchors its leg sprite to, i.e. the pin's entry point on the body
+/// — or the block's own cell center when nothing's adjacent (an unattached
+/// Pin/Lamp has no "entry" to point a label into).
+pub(crate) fn pin_label_anchor(cell: IVec2, attach_cells: &[IVec2]) -> Vec2 {
+    for offset in NEIGHBOR_OFFSETS {
+        let neighbor = cell + offset;
+        if attach_cells.contains(&neighbor) {
+            return (cell_to_world(cell) + cell_to_world(neighbor)) / 2.0;
+        }
+    }
+    cell_to_world(cell)
+}
+
+/// A Pin/Lamp's own world-space label text, positioned by `pin_label_anchor`
+/// — see `sync_structure_pin_label_text`.
+#[derive(Component)]
+pub(crate) struct StructurePinLabelText;
+
+/// z for a Pin/Lamp's own label text — comfortably above every structure
+/// block (whose own z climbs from 0.0 by `SPAWN_Z_STEP` per block) but below
+/// `StructureNameLabel` (`STRUCTURE_LABEL_Z`), so the chip's name always
+/// reads on top of everything else.
+const STRUCTURE_PIN_LABEL_TEXT_Z: f32 = 1.0;
+
 /// Makes a "leg" sprite (same `pin_lead.json` art as `spawn::leg`) appear
 /// between every Pin block and any Corps or Lampe block orthogonally
 /// adjacent to it — same visual language as native gates' own pins (see
@@ -549,13 +587,6 @@ pub fn sync_structure_pin_legs(
         .map(|(cell, _)| cell.0)
         .collect();
 
-    const NEIGHBOR_OFFSETS: [IVec2; 4] = [
-        IVec2::new(1, 0),
-        IVec2::new(-1, 0),
-        IVec2::new(0, 1),
-        IVec2::new(0, -1),
-    ];
-
     for (cell, kind) in &blocks {
         if !matches!(kind, StructureBlockKind::Pin) {
             continue;
@@ -584,6 +615,59 @@ pub fn sync_structure_pin_legs(
                 Transform::from_translation(mid_world.extend(-0.05)).with_rotation(rotation),
             ));
         }
+    }
+}
+
+/// Despawns and fully respawns every Pin/Lamp's own world-space label text
+/// (`StructurePinLabelText`, positioned by `pin_label_anchor`) — same
+/// recompute-from-scratch approach as `sync_structure_pin_legs`, just also
+/// triggered by a `StructurePinLabel` edit (typing into a selected block's
+/// Nom field) so the world-space text updates immediately instead of only on
+/// the next drag.
+#[allow(clippy::too_many_arguments)]
+pub fn sync_structure_pin_label_text(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut removed: RemovedComponents<StructureCell>,
+    changed_cells: Query<(), Changed<StructureCell>>,
+    changed_labels: Query<(), Changed<StructurePinLabel>>,
+    blocks: Query<(&StructureCell, &StructureBlockKind, &StructurePinLabel)>,
+    all_blocks: Query<(&StructureCell, &StructureBlockKind)>,
+    texts: Query<Entity, With<StructurePinLabelText>>,
+) {
+    let removed_any = removed.read().count() > 0;
+    if changed_cells.is_empty() && changed_labels.is_empty() && !removed_any {
+        return;
+    }
+
+    for entity in &texts {
+        commands.entity(entity).despawn();
+    }
+
+    let attach_cells: Vec<IVec2> = all_blocks
+        .iter()
+        .filter(|(_, kind)| matches!(kind, StructureBlockKind::Body | StructureBlockKind::Lamp))
+        .map(|(cell, _)| cell.0)
+        .collect();
+
+    let font = asset_server.load(UI_FONT_PATH);
+    for (cell, kind, label) in &blocks {
+        if !matches!(kind, StructureBlockKind::Pin | StructureBlockKind::Lamp) || label.0.is_empty()
+        {
+            continue;
+        }
+        let anchor = pin_label_anchor(cell.0, &attach_cells) + STRUCTURE_SPACE_OFFSET;
+        commands.spawn((
+            StructurePinLabelText,
+            Text2d::new(label.0.clone()),
+            TextFont {
+                font: font.clone().into(),
+                font_size: PIN_LABEL_FONT_SIZE.into(),
+                ..default()
+            },
+            TextColor(Color::WHITE),
+            Transform::from_translation(anchor.extend(STRUCTURE_PIN_LABEL_TEXT_Z)),
+        ));
     }
 }
 

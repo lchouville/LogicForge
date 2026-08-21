@@ -26,6 +26,11 @@ pub const PIXEL_UNIT: f32 = GRID_CELL_SIZE / PIXEL_GRID_DIM as f32;
 pub const FIXED_TICK_SECONDS: f64 = 0.001;
 pub const LAMP_MAX: f32 = 1.0;
 pub const LABEL_FONT_SIZE: f32 = 14.0;
+/// Font size for a Pin/Lamp's own label, rendered directly in world space at
+/// its connection point (see `editor::chip_structure::pin_label_anchor`) —
+/// smaller than `LABEL_FONT_SIZE` so a short label fits comfortably within
+/// one `GRID_CELL_SIZE` cell instead of overflowing into its neighbors.
+pub const PIN_LABEL_FONT_SIZE: f32 = 10.0;
 /// UI text font, vendored under `assets/fonts/` (see `FiraMono-LICENSE`,
 /// SIL OFL) — Bevy's built-in default font is an ASCII-only subset (~19KB vs
 /// this file's ~170KB) that renders accented characters as missing-glyph

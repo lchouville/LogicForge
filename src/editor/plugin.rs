@@ -22,7 +22,7 @@ use super::chip_structure::{
     sync_structure_block_panel, sync_structure_color, sync_structure_label_field_border,
     sync_structure_label_field_text, sync_structure_name_label,
     sync_structure_pin_label_field_border, sync_structure_pin_label_field_text,
-    sync_structure_pin_label_suggestions, sync_structure_pin_legs,
+    sync_structure_pin_label_suggestions, sync_structure_pin_label_text, sync_structure_pin_legs,
     sync_structure_toolbar_highlight, sync_structure_toolbar_visibility,
 };
 use super::chip_view::{PreChipEditCamera, handle_chip_view_toggle_click};
@@ -233,7 +233,12 @@ impl Plugin for EditorPlugin {
                     // ungated (like the render/sync systems already here)
                     // avoids the race entirely; its own early-return already
                     // makes it a no-op on every frame nothing changed.
-                    sync_structure_pin_legs,
+                    // `sync_structure_pin_label_text` grouped alongside its
+                    // leg-sprite counterpart: same leak-risk reasoning below,
+                    // it just respawns on the same `StructureCell`
+                    // add/change/remove events. Nested in a sub-tuple purely
+                    // to stay under `add_systems`' flat-tuple arity limit.
+                    (sync_structure_pin_legs, sync_structure_pin_label_text),
                     // Same reasoning as `sync_structure_pin_legs` above — not
                     // respawned per project so there's no leak risk of its
                     // own, but keeping it ungated too avoids depending on
