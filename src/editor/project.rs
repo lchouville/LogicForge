@@ -31,7 +31,7 @@ pub struct ProjectEntry {
 
 /// A chip's display name, its Corps tint, and its block layout — see
 /// `ProjectLibrary::chip_blueprint`.
-pub type ChipBlueprint = (String, Color, Vec<(IVec2, StructureBlockKind)>);
+pub type ChipBlueprint = (String, Color, Vec<(IVec2, StructureBlockKind, String)>);
 
 /// A placed circuit entity, captured just enough to respawn it identically
 /// via the same `spawn_*` functions used for live placement — see
@@ -68,7 +68,7 @@ enum SavedEntity {
         source: ProjectId,
         display_name: String,
         body_color: Color,
-        blocks: Vec<(IVec2, StructureBlockKind)>,
+        blocks: Vec<(IVec2, StructureBlockKind, String)>,
     },
     Cable {
         start: IVec2,
@@ -179,7 +179,7 @@ impl ProjectLibrary {
         let blocks = data
             .structure_entities
             .iter()
-            .map(|block| (block.cell, block.kind))
+            .map(|block| (block.cell, block.kind, block.label.clone()))
             .collect();
         Some((display_name, body_color, blocks))
     }

@@ -408,7 +408,7 @@ fn chip_instance_bounds(instance: &ChipInstance) -> (Vec2, Vec2) {
         return (Vec2::ZERO, Vec2::splat(GRID_CELL_SIZE));
     };
     let (mut min, mut max) = (first.0, first.0);
-    for (cell, _) in rest {
+    for (cell, _, _) in rest {
         min = min.min(*cell);
         max = max.max(*cell);
     }

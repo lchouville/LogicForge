@@ -104,6 +104,11 @@ pub const COLOR_PIN_HEADER: Color = Color::srgb(0.12, 0.12, 0.13);
 /// color of its own to fix here: it reuses the interior circuit's own
 /// `pin.json` appearance instead (see `chip_structure::spawn_structure_block`).
 pub const COLOR_STRUCTURE_LAMP: Color = Color::srgb(0.95, 0.85, 0.3);
+/// Lit tint for a placed `ChipInstance`'s Pin/Lamp socket when it carries a
+/// HIGH signal (see `chip_instance::sync_chip_instance_socket_color`) — a
+/// deliberately simple placeholder (plain white) rather than a proper glow,
+/// to refine later.
+pub const COLOR_CHIP_SOCKET_LIT: Color = Color::WHITE;
 /// Fixed choices offered for the chip structure's Corps (body) color — see
 /// `editor::chip_structure::ActiveStructureColor`.
 pub const STRUCTURE_COLOR_PALETTE: [Color; 6] = [

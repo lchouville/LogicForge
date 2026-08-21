@@ -1,14 +1,15 @@
 use bevy::prelude::*;
 
 use crate::constants::{
-    COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, COLOR_NEUTRAL, COLOR_STRUCTURE_LAMP, LABEL_FONT_SIZE,
-    PREVIEW_Z, UI_FONT_PATH,
+    COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, COLOR_CHIP_SOCKET_LIT, COLOR_NEUTRAL,
+    COLOR_STRUCTURE_LAMP, LABEL_FONT_SIZE, PREVIEW_Z, UI_FONT_PATH,
 };
 use crate::grid::cell_to_world;
 use crate::rendering::appearance::PendingAppearance;
-use crate::simulation::components::GridPosition;
+use crate::simulation::components::{GridPosition, Pin, PinRole, SignalValue};
+use crate::simulation::logic::{LogicState, read_logic};
 
-use super::chip_structure::StructureBlockKind;
+use super::chip_structure::{StructureBlockKind, StructurePinLabel};
 use super::hud::StandardEditorUi;
 use super::preview::{PlacementPreview, PlacementPreviewTint};
 use super::project::{ProjectId, ProjectLibrary};
@@ -16,18 +17,34 @@ use super::resources::{ArmedTool, ToolKind};
 use super::spawn::{facing_quat, placeholder_sprite};
 
 /// A placed copy of another project's structure ("puce"), frozen at the
-/// moment of placement — see `ProjectLibrary::chip_blueprint`. Purely
-/// visual for now (roadmap item 5's next step is wiring real signal
-/// continuity through it); `blocks` carries just enough to redraw itself
-/// and to persist/respawn without ever looking `source` back up in
-/// `ProjectLibrary` again, so a later rename/deletion of the source project
-/// can't desync or break an already-placed instance.
+/// moment of placement — see `ProjectLibrary::chip_blueprint`. Its Pin/Lamp
+/// blocks are real, cable-connectable net-resolution participants (see
+/// `spawn_chip_instance`); the chip's own interior circuit doesn't actually
+/// simulate yet — that's the follow-up chantier this lays groundwork for.
+/// `blocks` (including each Pin/Lamp's label, for that future pairing)
+/// carries just enough to redraw itself and to persist/respawn without ever
+/// looking `source` back up in `ProjectLibrary` again, so a later
+/// rename/deletion of the source project can't desync or break an
+/// already-placed instance.
 #[derive(Component, Clone)]
 pub struct ChipInstance {
     pub source: ProjectId,
     pub display_name: String,
     pub body_color: Color,
-    pub blocks: Vec<(IVec2, StructureBlockKind)>,
+    pub blocks: Vec<(IVec2, StructureBlockKind, String)>,
+}
+
+/// Marks a placed `ChipInstance`'s Pin/Lamp socket for
+/// `sync_chip_instance_socket_color`'s dedicated lit/unlit tint (plain
+/// white when HIGH, `off_color` otherwise) — deliberately overrides the
+/// generic `rendering::sync::sync_pin_colors` HIGH/LOW/NEUTRAL diagnostic
+/// palette for these sockets specifically (registered `.after()` it in
+/// `plugin.rs`, so this tint always wins the same frame), so a placed
+/// chip's connection points read as a simple lit/unlit indicator rather
+/// than the raw signal-sign palette used everywhere else.
+#[derive(Component)]
+pub(crate) struct ChipInstanceSocket {
+    off_color: Color,
 }
 
 /// Places a frozen copy of another project's structure as a component in
@@ -55,18 +72,27 @@ pub fn spawn_chip_instance(
         Visibility::default(),
     ));
     root.with_children(|parent| {
-        for (local_cell, kind) in blocks {
-            let offset = Transform::from_translation(cell_to_world(local_cell).extend(0.0));
+        for (local_cell, kind, label) in &blocks {
+            let offset = Transform::from_translation(cell_to_world(*local_cell).extend(0.0));
             // Same per-kind appearance as `chip_structure::spawn_structure_block`
             // (Corps tinted by `body_color` with `structure_body.json`, Pin
             // with the shared `pin.json` socket art, Lampe a flat
             // `COLOR_STRUCTURE_LAMP` square, no async asset) but without
-            // `StructureCell`/`StructurePinLabel` — a placed instance's
-            // blocks are a read-only snapshot, not editable structure-editor
-            // entities. Duplicated rather than reusing `spawn_structure_block`
-            // directly since that function always spawns its own root entity
-            // (never a child) and unconditionally tags components this copy
-            // must not carry.
+            // `StructureCell` — a placed instance's blocks are a read-only
+            // snapshot, not editable structure-editor entities. Duplicated
+            // rather than reusing `spawn_structure_block` directly since
+            // that function always spawns its own root entity (never a
+            // child) and unconditionally tags `StructureCell`, which this
+            // copy must not carry.
+            //
+            // Pin/Lamp additionally get `Pin`/`SignalValue` — real
+            // net-resolution participants, cable-connectable exactly like
+            // `pin_header::spawn_pin_header`'s own child (same
+            // `PinRole::Input` passive-sink default, direction deferred to
+            // the future nested-simulation chantier) — plus the frozen
+            // `StructurePinLabel` for that same future pairing, and
+            // `ChipInstanceSocket` for the lit/unlit tint. Corps stays
+            // purely visual: nothing to connect, nothing to light up.
             match kind {
                 StructureBlockKind::Body => {
                     parent.spawn((
@@ -80,15 +106,97 @@ pub fn spawn_chip_instance(
                         offset,
                         placeholder_sprite(COLOR_NEUTRAL, 1.0, 1.0),
                         PendingAppearance(asset_server.load("appearances/pin.json")),
+                        Pin {
+                            role: PinRole::Input,
+                            index: 0,
+                        },
+                        SignalValue::default(),
+                        StructurePinLabel(label.clone()),
+                        ChipInstanceSocket {
+                            off_color: COLOR_NEUTRAL,
+                        },
                     ));
                 }
                 StructureBlockKind::Lamp => {
-                    parent.spawn((offset, placeholder_sprite(COLOR_STRUCTURE_LAMP, 1.0, 1.0)));
+                    parent.spawn((
+                        offset,
+                        placeholder_sprite(COLOR_STRUCTURE_LAMP, 1.0, 1.0),
+                        Pin {
+                            role: PinRole::Input,
+                            index: 0,
+                        },
+                        SignalValue::default(),
+                        StructurePinLabel(label.clone()),
+                        ChipInstanceSocket {
+                            off_color: COLOR_STRUCTURE_LAMP,
+                        },
+                    ));
                 }
+            }
+        }
+
+        // Same "leg" visual (bridging a Pin to an orthogonally-adjacent
+        // Corps/Lampe block) as `chip_structure::sync_structure_pin_legs`,
+        // but computed once here rather than as a reactive system: a placed
+        // instance's blocks are frozen at placement time and never change,
+        // so there's nothing to recompute later — unlike the structure
+        // editor's own blocks, which the player can add/move/delete live.
+        let attach_cells: Vec<IVec2> = blocks
+            .iter()
+            .filter(|(_, kind, _)| {
+                matches!(kind, StructureBlockKind::Body | StructureBlockKind::Lamp)
+            })
+            .map(|(cell, _, _)| *cell)
+            .collect();
+        const NEIGHBOR_OFFSETS: [IVec2; 4] = [
+            IVec2::new(1, 0),
+            IVec2::new(-1, 0),
+            IVec2::new(0, 1),
+            IVec2::new(0, -1),
+        ];
+        for (cell, kind, _) in &blocks {
+            if !matches!(kind, StructureBlockKind::Pin) {
+                continue;
+            }
+            for leg_offset in NEIGHBOR_OFFSETS {
+                let neighbor = *cell + leg_offset;
+                if !attach_cells.contains(&neighbor) {
+                    continue;
+                }
+                let mid_local = (cell_to_world(*cell) + cell_to_world(neighbor)) / 2.0;
+                // `pin_lead.json` is authored as a horizontal bar — rotate a
+                // quarter turn for a vertically-adjacent pin, same reasoning
+                // as `sync_structure_pin_legs`.
+                let rotation = if leg_offset.x != 0 {
+                    Quat::IDENTITY
+                } else {
+                    Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)
+                };
+                parent.spawn((
+                    Sprite::default(),
+                    PendingAppearance(asset_server.load("appearances/pin_lead.json")),
+                    Transform::from_translation(mid_local.extend(-0.05)).with_rotation(rotation),
+                ));
             }
         }
     });
     root.id()
+}
+
+/// Tints every placed `ChipInstance`'s Pin/Lamp socket white when it carries
+/// a HIGH signal, its own base color otherwise — see `ChipInstanceSocket`'s
+/// doc comment for why this exists separately from (and must run after) the
+/// generic `rendering::sync::sync_pin_colors`.
+pub fn sync_chip_instance_socket_color(
+    mut sockets: Query<(&ChipInstanceSocket, &SignalValue, &mut Sprite)>,
+) {
+    for (socket, signal, mut sprite) in &mut sockets {
+        sprite.color = if read_logic(signal.0) == LogicState::High {
+            COLOR_CHIP_SOCKET_LIT
+        } else {
+            socket.off_color
+        };
+    }
 }
 
 /// Same footprint as `spawn_chip_instance`, dimmed by
@@ -101,7 +209,7 @@ pub fn spawn_chip_instance_preview(
     cell: IVec2,
     rotation: u8,
     body_color: Color,
-    blocks: &[(IVec2, StructureBlockKind)],
+    blocks: &[(IVec2, StructureBlockKind, String)],
 ) {
     let world = cell_to_world(cell);
     commands
@@ -117,8 +225,8 @@ pub fn spawn_chip_instance_preview(
             // what's set here (see its doc comment) — same reasoning
             // `spawn_placement_preview`'s own branches rely on, so the real
             // (non-dimmed) colors are passed here unchanged.
-            for &(local_cell, kind) in blocks {
-                let offset = Transform::from_translation(cell_to_world(local_cell).extend(0.0));
+            for (local_cell, kind, _label) in blocks {
+                let offset = Transform::from_translation(cell_to_world(*local_cell).extend(0.0));
                 match kind {
                     StructureBlockKind::Body => {
                         parent.spawn((

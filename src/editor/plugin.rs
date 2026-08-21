@@ -6,7 +6,8 @@ use super::camera_control::{
 };
 use super::chip_instance::{
     ChipPickerOpen, handle_chip_picker_row_click, handle_chip_picker_toggle_click,
-    spawn_chip_picker, sync_chip_picker_collapse, sync_chip_picker_rows,
+    spawn_chip_picker, sync_chip_instance_socket_color, sync_chip_picker_collapse,
+    sync_chip_picker_rows,
 };
 use super::chip_structure::{
     ActiveStructureColor, ActiveStructureLabel, ArmedStructureTool, SelectedStructureBlock,
@@ -56,6 +57,7 @@ use super::sidebar::{
     SidebarOpen, handle_project_selection, handle_sidebar_toggle_click, spawn_sidebar,
     sync_project_rows, sync_sidebar_collapse,
 };
+use crate::rendering::sync::sync_pin_colors;
 
 pub struct EditorPlugin;
 
@@ -207,6 +209,11 @@ impl Plugin for EditorPlugin {
                         sync_pin_header_label_suggestions,
                     ),
                     (sync_chip_picker_collapse, sync_chip_picker_rows),
+                    // Must run after the generic `sync_pin_colors`
+                    // (`rendering` plugin) so its lit/unlit tint is the one
+                    // that actually ends up on screen — see
+                    // `ChipInstanceSocket`'s doc comment.
+                    sync_chip_instance_socket_color.after(sync_pin_colors),
                     render_structure_selection_highlight,
                     render_structure_hover_highlight,
                     // Deliberately NOT gated by `run_if(ProjectView::ChipEdit)`
