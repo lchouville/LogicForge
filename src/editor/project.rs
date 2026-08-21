@@ -7,8 +7,8 @@ use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch}
 use super::camera_control::{CameraPanState, PinchState};
 use super::chip_structure::{
     ActiveStructureColor, ActiveStructureLabel, SelectedStructureBlock, StructureBlockKind,
-    StructureCell, StructureDragState, StructurePinDescription, StructurePinDescriptionFocus,
-    StructurePinLabel, StructurePinLabelFocus, spawn_structure_block,
+    StructureCell, StructureDragState, StructurePinLabel, StructurePinLabelFocus,
+    spawn_structure_block,
 };
 use super::chip_view::PreChipEditCamera;
 use super::edit_mode::reset_transient_editor_state;
@@ -64,14 +64,12 @@ struct SavedCamera {
 
 /// A structure block, captured just enough to respawn it via
 /// `chip_structure::spawn_structure_block` — same reasoning as
-/// `SavedEntity`. `label`/`description` are only ever non-empty for a `Pin`
-/// block (Corps/Lampe have no `StructurePinLabel`/`StructurePinDescription`
-/// component to read).
+/// `SavedEntity`. `label` is only ever non-empty for a `Pin` or `Lamp` block
+/// (Corps has no `StructurePinLabel` component to read).
 struct SavedStructureBlock {
     kind: StructureBlockKind,
     cell: IVec2,
     label: String,
-    description: String,
 }
 
 /// Matches every root circuit entity (gate/switch/lamp all carry
@@ -168,8 +166,6 @@ pub struct ViewSwitchState<'w> {
     /// project is no longer active — same reasoning as `selected_structure`
     /// above.
     pub pin_label_focus: ResMut<'w, StructurePinLabelFocus>,
-    /// Same reasoning as `pin_label_focus`, for the description field.
-    pub pin_description_focus: ResMut<'w, StructurePinDescriptionFocus>,
 }
 
 /// Bundles the two per-project structure customization resources
@@ -221,7 +217,6 @@ pub fn switch_to_project(
         &StructureBlockKind,
         &StructureCell,
         Option<&StructurePinLabel>,
-        Option<&StructurePinDescription>,
     )>,
     structure_despawn_targets: &Query<Entity, With<StructureCell>>,
     customization: &mut StructureCustomization,
@@ -272,12 +267,11 @@ pub fn switch_to_project(
         translation: camera_transform.translation.truncate(),
         scale: orthographic_scale(projection),
     });
-    for (kind, cell, label, description) in structure_blocks.iter() {
+    for (kind, cell, label) in structure_blocks.iter() {
         outgoing.structure_entities.push(SavedStructureBlock {
             kind: *kind,
             cell: cell.0,
             label: label.map(|l| l.0.clone()).unwrap_or_default(),
-            description: description.map(|d| d.0.clone()).unwrap_or_default(),
         });
     }
     outgoing.structure_color = Some(customization.color.0);
@@ -335,7 +329,6 @@ pub fn switch_to_project(
             saved.kind,
             customization.color.0,
             &saved.label,
-            &saved.description,
             z,
         );
     }
@@ -372,7 +365,6 @@ pub fn switch_to_project(
     *view_switch.camera_pan = CameraPanState::Idle;
     *view_switch.pinch = PinchState::default();
     view_switch.pin_label_focus.0 = false;
-    view_switch.pin_description_focus.0 = false;
 }
 
 fn orthographic_scale(projection: &Projection) -> f32 {

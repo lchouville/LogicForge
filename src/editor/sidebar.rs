@@ -6,9 +6,7 @@ use crate::constants::{
 };
 use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
 
-use super::chip_structure::{
-    StructureBlockKind, StructureCell, StructurePinDescription, StructurePinLabel,
-};
+use super::chip_structure::{StructureBlockKind, StructureCell, StructurePinLabel};
 use super::project::{
     CircuitEntityFilter, ProjectId, ProjectLibrary, StructureCustomization, ViewSwitchState,
     switch_to_project,
@@ -199,7 +197,6 @@ pub fn handle_project_selection(
         &StructureBlockKind,
         &StructureCell,
         Option<&StructurePinLabel>,
-        Option<&StructurePinDescription>,
     )>,
     structure_despawn_targets: Query<Entity, With<StructureCell>>,
     mut customization: StructureCustomization,
