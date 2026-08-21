@@ -1,15 +1,16 @@
 use bevy::prelude::*;
 
 use crate::constants::{
-    COLOR_GATE, COLOR_LAMP_OFF, COLOR_NEUTRAL, COLOR_SWITCH, GRID_CELL_SIZE, LABEL_FONT_SIZE,
-    PREVIEW_ALPHA, PREVIEW_Z,
+    COLOR_GATE, COLOR_LAMP_OFF, COLOR_NEUTRAL, COLOR_PIN_HEADER, COLOR_SWITCH, GRID_CELL_SIZE,
+    LABEL_FONT_SIZE, PREVIEW_ALPHA, PREVIEW_Z,
 };
 use crate::grid::cell_to_world;
 use crate::rendering::appearance::PendingAppearance;
 use crate::simulation::components::{
-    GateKind, GridPosition, Lamp, Pin, PinRole, SignalValue, Switch,
+    GateKind, GridPosition, Lamp, Pin, PinHeader, PinRole, SignalValue, Switch,
 };
 
+use super::chip_structure::StructurePinLabel;
 use super::preview::{PlacementPreview, PlacementPreviewTint};
 use super::resources::ToolKind;
 
@@ -309,6 +310,42 @@ pub fn spawn_lamp(
         .id()
 }
 
+/// Spawns a native, cable-connectable "Pin" in the interior circuit — see
+/// `PinHeader`'s doc comment. `initial_label` seeds its `StructurePinLabel`
+/// (the same component type the chip-structure editor's own Pin/Lamp blocks
+/// carry — matching text on both sides is what "links" them). Single
+/// `PinRole::Input` child, same shape as `spawn_lamp`.
+pub fn spawn_pin_header(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    cell: IVec2,
+    rotation: u8,
+    initial_label: &str,
+    z: f32,
+) -> Entity {
+    let world = cell_to_world(cell);
+    commands
+        .spawn((
+            PinHeader,
+            GridPosition(cell),
+            StructurePinLabel(initial_label.to_string()),
+            placeholder_sprite(COLOR_PIN_HEADER, 1.0, 1.0),
+            PendingAppearance(asset_server.load("appearances/pin_header.json")),
+            Transform::from_translation(world.extend(z)).with_rotation(facing_quat(rotation)),
+            children![
+                pin(
+                    asset_server,
+                    PinRole::Input,
+                    0,
+                    Vec2::new(PIN_X_OFFSET, 0.0)
+                ),
+                leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
+                label("PIN", Vec2::ZERO, Color::WHITE),
+            ],
+        ))
+        .id()
+}
+
 /// Ghosts the given tool's full body + legs + pins + label at `cell`,
 /// dimmed by `tint_placement_preview` (and the label's own pre-dimmed
 /// color, since `Text2d` has no `Sprite` for that system to tint). Mirrors
@@ -459,6 +496,30 @@ pub fn spawn_placement_preview(
                     leg(asset_server, Vec2::new(-PIN_X_OFFSET / 2.0, 0.0)),
                 ));
                 parent.spawn(label("LMP", Vec2::ZERO, label_color));
+            });
+        }
+        ToolKind::Pin => {
+            root.with_children(|parent| {
+                parent.spawn((
+                    PlacementPreviewTint,
+                    body(
+                        asset_server,
+                        "appearances/pin_header.json",
+                        COLOR_PIN_HEADER,
+                        1.0,
+                        1.0,
+                        Vec2::ZERO,
+                    ),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    pin_ghost(asset_server, Vec2::new(PIN_X_OFFSET, 0.0)),
+                ));
+                parent.spawn((
+                    PlacementPreviewTint,
+                    leg(asset_server, Vec2::new(PIN_X_OFFSET / 2.0, 0.0)),
+                ));
+                parent.spawn(label("PIN", Vec2::ZERO, label_color));
             });
         }
         ToolKind::Cable => {}

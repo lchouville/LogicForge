@@ -9,6 +9,7 @@ use crate::simulation::components::{Cable, GateKind, GridPosition};
 
 use super::camera_control::CameraPanState;
 use super::hud::{DeleteButton, ModeToggleButton, PointerOverUi, RotateButton};
+use super::pin_header::PinHeaderLabelFocus;
 use super::placement::pick_entity_at_cell;
 use super::pointer::PointerState;
 use super::resources::{
@@ -28,12 +29,14 @@ pub fn reset_transient_editor_state(
     drag: &mut EditDragState,
     cycle: &mut PickCycleState,
     selected: &mut Selected,
+    pin_header_label_focus: &mut PinHeaderLabelFocus,
 ) {
     armed.0 = None;
     *interaction = InteractionState::Idle;
     *drag = EditDragState::Idle;
     *cycle = PickCycleState::default();
     selected.0 = None;
+    pin_header_label_focus.0 = false;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -46,6 +49,7 @@ pub fn toggle_mode(
     mut drag: ResMut<EditDragState>,
     mut cycle: ResMut<PickCycleState>,
     mut selected: ResMut<Selected>,
+    mut pin_header_label_focus: ResMut<PinHeaderLabelFocus>,
 ) {
     let button_pressed = mode_button.iter().any(|i| *i == Interaction::Pressed);
     if !keys.just_pressed(KeyCode::Tab) && !button_pressed {
@@ -61,6 +65,7 @@ pub fn toggle_mode(
         &mut drag,
         &mut cycle,
         &mut selected,
+        &mut pin_header_label_focus,
     );
 }
 

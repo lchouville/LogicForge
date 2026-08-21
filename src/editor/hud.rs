@@ -75,7 +75,8 @@ pub fn spawn_toolbar(mut commands: Commands, asset_server: Res<AssetServer>) {
             tool_button(ToolKind::Gate(GateKind::Not), "3: NOT", font.clone()),
             tool_button(ToolKind::Switch, "4: Switch", font.clone()),
             tool_button(ToolKind::Lamp, "5: Lamp", font.clone()),
-            tool_button(ToolKind::Cable, "6: Cable", font),
+            tool_button(ToolKind::Cable, "6: Cable", font.clone()),
+            tool_button(ToolKind::Pin, "7: Pin", font),
         ],
     ));
 }
@@ -137,24 +138,25 @@ pub fn spawn_view_toggle_button(mut commands: Commands, asset_server: Res<AssetS
 #[derive(Component)]
 pub(crate) struct ChipViewToggleButtonLabel;
 
-/// The label shown for the *current* view: "Vue puce" while in Standard
-/// (press to go there), "Vue standard" while in ChipEdit (press to go
-/// back) — so the button always names where pressing it takes you.
+/// The label shown for the *current* view: "Vue structure" while in
+/// Standard (press to go there), "Vue circuit intérieur" while in ChipEdit
+/// (press to go back) — so the button always names where pressing it takes
+/// you.
 fn chip_view_toggle_label(view: ProjectView) -> &'static str {
     match view {
-        ProjectView::Standard => "Vue puce",
-        ProjectView::ChipEdit => "Vue standard",
+        ProjectView::Standard => "Vue structure",
+        ProjectView::ChipEdit => "Vue circuit intérieur",
     }
 }
 
 fn chip_view_toggle_button_frame(font: Handle<Font>, initial_view: ProjectView) -> impl Bundle {
     (
         Node {
-            // Wide enough for "Vue standard" (13 chars) without wrapping —
-            // narrower than this, Bevy UI text wraps rather than
+            // Wide enough for "Vue circuit intérieur" (22 chars) without
+            // wrapping — narrower than this, Bevy UI text wraps rather than
             // overflowing, which broke this button's layout when it showed
             // the longer of its two labels.
-            width: Val::Px(130.0),
+            width: Val::Px(210.0),
             height: Val::Px(36.0),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,

@@ -94,6 +94,9 @@ pub const COLOR_NEUTRAL: Color = Color::srgb(0.4, 0.4, 0.45);
 pub const COLOR_SWITCH: Color = Color::srgb(0.75, 0.75, 0.2);
 pub const COLOR_GATE: Color = Color::srgb(0.3, 0.3, 0.35);
 pub const COLOR_LAMP_OFF: Color = Color::srgb(0.25, 0.2, 0.1);
+/// Placeholder color for the interior `PinHeader` component while its real
+/// "PCB pin block" appearance streams in — dark plastic-connector black.
+pub const COLOR_PIN_HEADER: Color = Color::srgb(0.12, 0.12, 0.13);
 
 /// Fixed color for a Lampe block in the chip structure editor (see
 /// `editor::chip_structure`) — not tinted by `ActiveStructureColor`, since

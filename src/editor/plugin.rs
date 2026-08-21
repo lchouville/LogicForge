@@ -34,6 +34,12 @@ use super::inspector::{spawn_inspector_panel, sync_inspector_panel};
 use super::interaction::{
     handle_left_click_end, handle_left_click_start, render_cable_drag_preview,
 };
+use super::pin_header::{
+    PinHeaderLabelFocus, handle_pin_header_label_field_click,
+    handle_pin_header_label_suggestion_click, handle_pin_header_label_typing,
+    spawn_pin_header_panel, sync_pin_header_label_field_border, sync_pin_header_label_field_text,
+    sync_pin_header_label_suggestions, sync_pin_header_panel,
+};
 use super::placement::{handle_rotation_input, handle_tool_arming};
 use super::pointer::{ActiveTouch, PointerState, update_pointer_state};
 use super::preview::{sync_placement_preview, tint_placement_preview};
@@ -74,6 +80,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<ActiveStructureLabel>()
             .init_resource::<StructureLabelFocus>()
             .init_resource::<StructurePinLabelFocus>()
+            .init_resource::<PinHeaderLabelFocus>()
             .add_systems(
                 Startup,
                 (
@@ -87,6 +94,7 @@ impl Plugin for EditorPlugin {
                     spawn_structure_toolbar,
                     spawn_structure_name_label,
                     spawn_structure_block_panel,
+                    spawn_pin_header_panel,
                 ),
             )
             .add_systems(
@@ -122,6 +130,11 @@ impl Plugin for EditorPlugin {
                             handle_edit_click_end,
                             handle_delete_selected,
                             handle_selected_rotation,
+                        ),
+                        (
+                            handle_pin_header_label_field_click,
+                            handle_pin_header_label_typing,
+                            handle_pin_header_label_suggestion_click,
                         ),
                     )
                         // The whole standard-editor input pipeline is frozen
@@ -176,6 +189,12 @@ impl Plugin for EditorPlugin {
                         sync_structure_pin_label_field_text,
                         sync_structure_pin_label_field_border,
                         sync_structure_pin_label_suggestions,
+                    ),
+                    (
+                        sync_pin_header_panel,
+                        sync_pin_header_label_field_text,
+                        sync_pin_header_label_field_border,
+                        sync_pin_header_label_suggestions,
                     ),
                     render_structure_selection_highlight,
                     render_structure_hover_highlight,

@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::simulation::components::GateKind;
 
+use super::pin_header::PinHeaderLabelFocus;
 use super::wiring::CableEnd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +11,7 @@ pub enum ToolKind {
     Switch,
     Lamp,
     Cable,
+    Pin,
 }
 
 /// The component the player has armed via a number key. `None` means
@@ -108,4 +110,8 @@ pub struct TransientEditorState<'w> {
     pub cycle: ResMut<'w, PickCycleState>,
     pub selected: ResMut<'w, Selected>,
     pub spawn_order: ResMut<'w, SpawnOrderCounter>,
+    /// A focused `PinHeader` label field is stale the instant its target
+    /// entity is despawned by a project switch — same reasoning as
+    /// `selected` above.
+    pub pin_header_label_focus: ResMut<'w, PinHeaderLabelFocus>,
 }

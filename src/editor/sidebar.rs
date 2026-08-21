@@ -4,12 +4,12 @@ use crate::constants::{
     COLOR_BUTTON_ARMED, COLOR_BUTTON_BORDER, COLOR_BUTTON_NORMAL, LABEL_FONT_SIZE, SIDEBAR_WIDTH,
     UI_FONT_PATH,
 };
-use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
+use crate::simulation::components::{Cable, GridPosition};
 
 use super::chip_structure::{StructureBlockKind, StructureCell, StructurePinLabel};
 use super::project::{
-    CircuitEntityFilter, ProjectId, ProjectLibrary, StructureCustomization, ViewSwitchState,
-    switch_to_project,
+    CircuitEntityFilter, CircuitQueries, ProjectId, ProjectLibrary, StructureCustomization,
+    ViewSwitchState, switch_to_project,
 };
 use super::resources::TransientEditorState;
 
@@ -188,10 +188,7 @@ pub fn handle_project_selection(
     mut library: ResMut<ProjectLibrary>,
     rows: Query<(&Interaction, &ProjectRow), Changed<Interaction>>,
     new_project_button: Query<&Interaction, (Changed<Interaction>, With<NewProjectButton>)>,
-    gates: Query<(&GateKind, &GridPosition, &Transform)>,
-    switches: Query<(&Switch, &GridPosition, &Transform)>,
-    lamps: Query<(&Lamp, &GridPosition, &Transform)>,
-    cables: Query<&Cable>,
+    circuit: CircuitQueries,
     despawn_targets: Query<Entity, CircuitEntityFilter>,
     structure_blocks: Query<(
         &StructureBlockKind,
@@ -224,10 +221,7 @@ pub fn handle_project_selection(
         &mut library,
         &mut commands,
         &asset_server,
-        &gates,
-        &switches,
-        &lamps,
-        &cables,
+        &circuit,
         &despawn_targets,
         &structure_blocks,
         &structure_despawn_targets,

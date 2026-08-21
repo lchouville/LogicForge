@@ -712,6 +712,14 @@ pub(crate) struct StructurePinLabelSuggestionButton(pub String);
 #[derive(Component)]
 pub(crate) struct StructureDescriptionText;
 
+/// Shows "Lié" once the selected Pin/Lamp's label matches another
+/// `StructurePinLabel`-carrying entity anywhere — including a `PinHeader` in
+/// the interior circuit (`editor::pin_header`), since matching labels across
+/// the two views is exactly what "linked" means. Plain text, no icon (see
+/// the glyph-coverage lesson already documented elsewhere in this file).
+#[derive(Component)]
+pub(crate) struct StructureLinkedText;
+
 const STRUCTURE_PIN_LABEL_PLACEHOLDER: &str = "Label de connexion";
 
 fn structure_pin_panel_caption(font: Handle<Font>, text: &str) -> impl Bundle {
@@ -793,6 +801,11 @@ pub fn spawn_structure_block_panel(mut commands: Commands, asset_server: Res<Ass
                             ..default()
                         },
                     ));
+                    parent.spawn((
+                        StructureLinkedText,
+                        Text::new(""),
+                        inspector_text_font(font.clone()),
+                    ));
                 });
             parent.spawn(structure_pin_panel_caption(font.clone(), "Description"));
             parent.spawn((
@@ -824,15 +837,21 @@ fn inspector_text_font(font: Handle<Font>) -> impl Bundle {
 /// pattern as `inspector::sync_inspector_panel` (position is fixed, so unlike
 /// the panel's previous floating design there's no per-frame reprojection
 /// needed).
+#[allow(clippy::too_many_arguments)]
 pub fn sync_structure_block_panel(
     selected: Res<SelectedStructureBlock>,
     blocks: Query<&StructureBlockKind>,
+    labels: Query<(Entity, &StructurePinLabel)>,
     mut panel: Query<&mut Node, With<StructureBlockPanel>>,
     mut name_section: Query<
         &mut Node,
         (With<StructurePinNameSection>, Without<StructureBlockPanel>),
     >,
     mut description_text: Query<&mut Text, With<StructureDescriptionText>>,
+    mut linked_text: Query<
+        &mut Text,
+        (With<StructureLinkedText>, Without<StructureDescriptionText>),
+    >,
 ) {
     if !selected.is_changed() {
         return;
@@ -858,6 +877,25 @@ pub fn sync_structure_block_panel(
     }
     if let Ok(mut text) = description_text.single_mut() {
         text.0 = structure_block_description(*kind).to_string();
+    }
+    // Gated on `selected.is_changed()` like the rest of this system, so
+    // typing a matching label on the *other* side won't flip this to "Lié"
+    // until this panel's own selection changes again (re-click to refresh)
+    // — acceptable for a first pass, same simplicity trade-off as the rest
+    // of this incrementally-built link system.
+    if let Ok(mut text) = linked_text.single_mut() {
+        let own_label = selected.0.and_then(|entity| labels.get(entity).ok());
+        let is_linked = own_label.is_some_and(|(entity, label)| {
+            !label.0.is_empty()
+                && labels
+                    .iter()
+                    .any(|(other, other_label)| other != entity && other_label.0 == label.0)
+        });
+        text.0 = if is_linked {
+            "Lié".to_string()
+        } else {
+            String::new()
+        };
     }
 }
 
@@ -1274,29 +1312,30 @@ pub fn sync_structure_pin_label_field_border(
 }
 
 /// Rebuilds the suggestion button list from every distinct, non-empty
-/// `StructurePinLabel` found on Pin/Lamp blocks *other* than the one currently
-/// selected — cached in `last` and only actually despawned/respawned when
-/// the computed set changes, so typing into the selected block's own field
-/// (which doesn't affect this set, since it's excluded) never churns the
-/// UI. Despawn-and-respawn rather than incremental diffing, same reasoning
-/// as `sync_structure_pin_legs`: a chip's pin/lamp count is always small.
+/// `StructurePinLabel` found anywhere *other* than the block currently
+/// selected — deliberately not filtered to `StructureBlockKind::Pin | Lamp`
+/// (that would be redundant anyway: a Corps never carries this component)
+/// so the pool also picks up labels from the interior circuit's `PinHeader`
+/// entities (`editor::pin_header`) — matching labels across the structure
+/// and interior views is exactly what marks them as linked. Cached in `last`
+/// and only actually despawned/respawned when the computed set changes, so
+/// typing into the selected block's own field (which doesn't affect this
+/// set, since it's excluded) never churns the UI. Despawn-and-respawn rather
+/// than incremental diffing, same reasoning as `sync_structure_pin_legs`: a
+/// chip's pin/lamp count is always small.
 pub fn sync_structure_pin_label_suggestions(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     selected: Res<SelectedStructureBlock>,
-    blocks: Query<(Entity, &StructureBlockKind, &StructurePinLabel)>,
+    blocks: Query<(Entity, &StructurePinLabel)>,
     suggestions_root: Query<Entity, With<StructurePinLabelSuggestions>>,
     existing_buttons: Query<Entity, With<StructurePinLabelSuggestionButton>>,
     mut last: Local<Vec<String>>,
 ) {
     let mut current: Vec<String> = blocks
         .iter()
-        .filter(|(entity, kind, label)| {
-            matches!(kind, StructureBlockKind::Pin | StructureBlockKind::Lamp)
-                && Some(*entity) != selected.0
-                && !label.0.is_empty()
-        })
-        .map(|(_, _, label)| label.0.clone())
+        .filter(|(entity, label)| Some(*entity) != selected.0 && !label.0.is_empty())
+        .map(|(_, label)| label.0.clone())
         .collect();
     current.sort();
     current.dedup();

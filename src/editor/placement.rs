@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::simulation::components::GateKind;
 
 use super::resources::{ArmedTool, PendingRotation, PickCycleState, ToolKind};
-use super::spawn::{spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_switch};
+use super::spawn::{spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_pin_header, spawn_switch};
 
 pub fn handle_tool_arming(
     keys: Res<ButtonInput<KeyCode>>,
@@ -22,6 +22,8 @@ pub fn handle_tool_arming(
         Some(Some(ToolKind::Lamp))
     } else if keys.just_pressed(KeyCode::Digit6) {
         Some(Some(ToolKind::Cable))
+    } else if keys.just_pressed(KeyCode::Digit7) {
+        Some(Some(ToolKind::Pin))
     } else if keys.just_pressed(KeyCode::Digit0) || keys.just_pressed(KeyCode::Escape) {
         Some(None)
     } else {
@@ -105,6 +107,9 @@ pub fn place_tool(
         }
         ToolKind::Lamp => {
             spawn_lamp(commands, asset_server, cell, rotation, z);
+        }
+        ToolKind::Pin => {
+            spawn_pin_header(commands, asset_server, cell, rotation, "", z);
         }
         ToolKind::Cable => {
             // Cables are placed via press+drag (see `handle_left_click_start`

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, Switch};
+use crate::simulation::components::{Cable, GateKind, GridPosition, Lamp, PinHeader, Switch};
 
 use super::camera_control::{CameraPanState, PinchState};
 use super::chip_structure::{
@@ -14,7 +14,8 @@ use super::chip_view::PreChipEditCamera;
 use super::edit_mode::reset_transient_editor_state;
 use super::resources::TransientEditorState;
 use super::spawn::{
-    rotation_from_transform, spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_switch,
+    rotation_from_transform, spawn_and_or_gate, spawn_lamp, spawn_not_gate, spawn_pin_header,
+    spawn_switch,
 };
 use crate::constants::SPAWN_Z_STEP;
 use crate::rendering::cable::spawn_cable;
@@ -50,6 +51,11 @@ enum SavedEntity {
     Lamp {
         cell: IVec2,
         rotation: u8,
+    },
+    Pin {
+        cell: IVec2,
+        rotation: u8,
+        label: String,
     },
     Cable {
         start: IVec2,
@@ -180,6 +186,29 @@ pub struct StructureCustomization<'w> {
     pub label: ResMut<'w, ActiveStructureLabel>,
 }
 
+/// Bundles every interior-circuit entity query `switch_to_project` needs to
+/// snapshot into one system-param slot for its callers — same reasoning as
+/// `ViewSwitchState`/`StructureCustomization` above: adding the `PinHeader`
+/// query as a 5th bare `Query` on `sidebar::handle_project_selection`
+/// (already at Bevy's 16-parameter system limit) would push it over.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct CircuitQueries<'w, 's> {
+    pub gates: Query<'w, 's, (&'static GateKind, &'static GridPosition, &'static Transform)>,
+    pub switches: Query<'w, 's, (&'static Switch, &'static GridPosition, &'static Transform)>,
+    pub lamps: Query<'w, 's, (&'static Lamp, &'static GridPosition, &'static Transform)>,
+    pub pin_headers: Query<
+        'w,
+        's,
+        (
+            &'static GridPosition,
+            &'static Transform,
+            Option<&'static StructurePinLabel>,
+        ),
+        With<PinHeader>,
+    >,
+    pub cables: Query<'w, 's, &'static Cable>,
+}
+
 /// Starts the player on a real, visible, selected "Projet 1" — same
 /// `create_project` auto-naming as any project the player creates later, no
 /// special-cased hidden entry (an earlier version of this reserved id `0`
@@ -208,10 +237,7 @@ pub fn switch_to_project(
     library: &mut ProjectLibrary,
     commands: &mut Commands,
     asset_server: &AssetServer,
-    gates: &Query<(&GateKind, &GridPosition, &Transform)>,
-    switches: &Query<(&Switch, &GridPosition, &Transform)>,
-    lamps: &Query<(&Lamp, &GridPosition, &Transform)>,
-    cables: &Query<&Cable>,
+    circuit: &CircuitQueries,
     despawn_targets: &Query<Entity, CircuitEntityFilter>,
     structure_blocks: &Query<(
         &StructureBlockKind,
@@ -230,7 +256,7 @@ pub fn switch_to_project(
     }
 
     let mut outgoing = ProjectData::default();
-    for (kind, position, transform) in gates.iter() {
+    for (kind, position, transform) in circuit.gates.iter() {
         let rotation = rotation_from_transform(transform);
         outgoing.entities.push(match kind {
             GateKind::And | GateKind::Or => SavedEntity::AndOrGate {
@@ -244,20 +270,27 @@ pub fn switch_to_project(
             },
         });
     }
-    for (switch, position, transform) in switches.iter() {
+    for (switch, position, transform) in circuit.switches.iter() {
         outgoing.entities.push(SavedEntity::Switch {
             cell: position.0,
             rotation: rotation_from_transform(transform),
             on: switch.on,
         });
     }
-    for (_, position, transform) in lamps.iter() {
+    for (_, position, transform) in circuit.lamps.iter() {
         outgoing.entities.push(SavedEntity::Lamp {
             cell: position.0,
             rotation: rotation_from_transform(transform),
         });
     }
-    for cable in cables.iter() {
+    for (position, transform, label) in circuit.pin_headers.iter() {
+        outgoing.entities.push(SavedEntity::Pin {
+            cell: position.0,
+            rotation: rotation_from_transform(transform),
+            label: label.map(|l| l.0.clone()).unwrap_or_default(),
+        });
+    }
+    for cable in circuit.cables.iter() {
         outgoing.entities.push(SavedEntity::Cable {
             start: cable.start,
             end: cable.end,
@@ -310,6 +343,13 @@ pub fn switch_to_project(
             SavedEntity::Lamp { cell, rotation } => {
                 spawn_lamp(commands, asset_server, cell, rotation, z);
             }
+            SavedEntity::Pin {
+                cell,
+                rotation,
+                ref label,
+            } => {
+                spawn_pin_header(commands, asset_server, cell, rotation, label, z);
+            }
             SavedEntity::Cable { start, end } => {
                 spawn_cable(commands, asset_server, start, end);
             }
@@ -350,6 +390,7 @@ pub fn switch_to_project(
         &mut state.drag,
         &mut state.cycle,
         &mut state.selected,
+        &mut state.pin_header_label_focus,
     );
 
     // A project switch always lands in the interior circuit's Standard view
